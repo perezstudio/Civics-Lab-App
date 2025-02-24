@@ -15,6 +15,11 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Checkbox } from "~/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "~/components/ui/dialog";
+import { Label } from "~/components/ui/label";
+import { ScrollArea } from "~/components/ui/scroll-area";
+import { Separator } from "~/components/ui/separator";
+import { Badge } from "~/components/ui/badge";
 import { AlertDialog, 
   AlertDialogAction, 
   AlertDialogCancel, 
@@ -23,7 +28,7 @@ import { AlertDialog,
   AlertDialogFooter, 
   AlertDialogHeader, 
   AlertDialogTitle } from "~/components/ui/alert-dialog";
-import { Trash2, Edit, Cog } from "lucide-react";
+import { Trash2, Edit, Cog, Plus, X, UserPlus } from "lucide-react";
 
 // Utility function for conditional classnames
 function cn(...classes: string[]) {
@@ -60,6 +65,36 @@ interface ContactView {
     field: string;
     direction: 'asc' | 'desc';
   }[];
+}
+
+interface EmailEntry {
+  email: string;
+  status: string;
+}
+
+interface PhoneEntry {
+  number: string;
+  status: string;
+}
+
+interface AddressEntry {
+  street: string;
+  street2: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  status: string;
+}
+
+interface SocialMediaEntry {
+  username: string;
+  service: string;
+  status: string;
+}
+
+interface Tag {
+  id: string;
+  name: string;
 }
 
 type WorkspaceRole = 'Super Admin' | 'Admin' | 'Basic User' | 'Volunteer';
@@ -152,6 +187,183 @@ export default function ContactsRoute() {
   const [isEditViewOpen, setIsEditViewOpen] = useState(false);
   const [editViewName, setEditViewName] = useState('');
   const [isDeleteViewOpen, setIsDeleteViewOpen] = useState(false);
+  const [isViewSelectorOpen, setIsViewSelectorOpen] = useState(false);
+  const [isCreateContactOpen, setIsCreateContactOpen] = useState(false);
+  const [races, setRaces] = useState<Array<{ id: string; name: string }>>([]);
+  const [genders, setGenders] = useState<Array<{ id: string; name: string }>>([]);
+  const [states, setStates] = useState<Array<{ id: string; name: string }>>([]);
+  const [zipCodes, setZipCodes] = useState<Array<{ id: string; code: string }>>([]);
+  const [tags, setTags] = useState<Array<Tag>>([]);
+  
+  const STATUS_OPTIONS = ['Active', 'Inactive', 'Archived'] as const;
+  const SOCIAL_MEDIA_SERVICES = ['Facebook', 'Twitter', 'Instagram', 'LinkedIn', 'TikTok'] as const;
+  
+  const [firstName, setFirstName] = useState('');
+  const [middleName, setMiddleName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [race, setRace] = useState('');
+  const [gender, setGender] = useState('');
+  const [pronouns, setPronouns] = useState('');
+  const [vanId, setVanId] = useState('');
+  const [status, setStatus] = useState<typeof STATUS_OPTIONS[number]>('Active');
+  const [emails, setEmails] = useState<EmailEntry[]>([{ email: '', status: 'Active' }]);
+  const [phones, setPhones] = useState<PhoneEntry[]>([{ number: '', status: 'Active' }]);
+  const [addresses, setAddresses] = useState<AddressEntry[]>([{
+    street: '',
+    street2: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    status: 'Active'
+  }]);
+  const [socialMedia, setSocialMedia] = useState<SocialMediaEntry[]>([{
+    username: '',
+    service: SOCIAL_MEDIA_SERVICES[0],
+    status: 'Active'
+  }]);
+  const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
+  
+  useEffect(() => {
+    if (!isCreateContactOpen || !supabase) return;
+  
+    const fetchReferenceData = async () => {
+      try {
+        const [
+          { data: raceData },
+          { data: genderData },
+          { data: stateData },
+          { data: zipData },
+          { data: tagData }
+        ] = await Promise.all([
+          supabase.from('races').select('id, name'),
+          supabase.from('genders').select('id, name'),
+          supabase.from('states').select('id, name'),
+          supabase.from('zip_codes').select('id, code'),
+          supabase.from('contact_tags').select('id, name')
+        ]);
+  
+        setRaces(raceData || []);
+        setGenders(genderData || []);
+        setStates(stateData || []);
+        setZipCodes(zipData || []);
+        setTags(tagData || []);
+      } catch (error) {
+        console.error('Error fetching reference data:', error);
+      }
+    };
+  
+    fetchReferenceData();
+  }, [isCreateContactOpen, supabase]);
+  
+  const handleCreateContact = async () => {
+    if (!supabase || !workspaceId) return;
+  
+    try {
+      // Create the contact
+      const { data: contact, error: contactError } = await supabase
+        .from('contacts')
+        .insert({
+          workspace_id: workspaceId,
+          first_name: firstName,
+          middle_name: middleName,
+          last_name: lastName,
+          race_id: race,
+          gender_id: gender,
+          pronouns,
+          vanid: vanId,
+          status
+        })
+        .select()
+        .single();
+  
+      if (contactError) throw contactError;
+  
+      // Create related records
+      await Promise.all([
+        // Emails
+        ...emails.filter(e => e.email.trim()).map(email => 
+          supabase.from('contact_emails').insert({
+            contact_id: contact.id,
+            email: email.email,
+            status: email.status
+          })
+        ),
+        // Phones
+        ...phones.filter(p => p.number.trim()).map(phone => 
+          supabase.from('contact_phones').insert({
+            contact_id: contact.id,
+            phone_number: phone.number,
+            status: phone.status
+          })
+        ),
+        // Addresses
+        ...addresses.filter(a => a.street.trim()).map(addr => 
+          supabase.from('contact_addresses').insert({
+            contact_id: contact.id,
+            street_address: addr.street,
+            street_address_2: addr.street2,
+            city: addr.city,
+            state_id: addr.state,
+            zip_code_id: addr.zipCode,
+            status: addr.status
+          })
+        ),
+        // Social Media
+        ...socialMedia.filter(sm => sm.username.trim()).map(sm => 
+          supabase.from('contact_social_media').insert({
+            contact_id: contact.id,
+            username: sm.username,
+            service: sm.service,
+            status: sm.status
+          })
+        ),
+        // Tags
+        ...selectedTags.map(tag => 
+          supabase.from('contact_tag_assignments').insert({
+            contact_id: contact.id,
+            tag_id: tag.id
+          })
+        )
+      ]);
+  
+      // Reset form and close dialog
+      resetForm();
+      setIsCreateContactOpen(false);
+      // Refresh contacts list
+      fetchContacts();
+    } catch (error) {
+      console.error('Error creating contact:', error);
+    }
+  };
+  
+  const resetForm = () => {
+    setFirstName('');
+    setMiddleName('');
+    setLastName('');
+    setRace('');
+    setGender('');
+    setPronouns('');
+    setVanId('');
+    setStatus('Active');
+    setEmails([{ email: '', status: 'Active' }]);
+    setPhones([{ number: '', status: 'Active' }]);
+    setAddresses([{
+      street: '',
+      street2: '',
+      city: '',
+      state: '',
+      zipCode: '',
+      status: 'Active'
+    }]);
+    setSocialMedia([{
+      username: '',
+      service: SOCIAL_MEDIA_SERVICES[0],
+      status: 'Active'
+    }]);
+    setSelectedTags([]);
+  };
+
+
 
   // Initialize Supabase client and set initial workspace
   useEffect(() => {
@@ -423,52 +635,56 @@ export default function ContactsRoute() {
         </div>
         
         <div className="flex items-center gap-2">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                role="combobox"
-                className="w-[200px] justify-between"
-              >
-                {selectedView ? selectedView.view_name : "Select view..."}
-                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[200px] p-0">
-              <Command>
-                <CommandInput placeholder="Search views..." />
-                <CommandList>
-                  <CommandEmpty>No views found.</CommandEmpty>
-                  <CommandGroup>
-                    {views.map((view) => (
+            <Popover open={isViewSelectorOpen} onOpenChange={setIsViewSelectorOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="w-[200px] justify-between"
+                >
+                  {selectedView ? selectedView.view_name : "Select view..."}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[200px] p-0">
+                <Command>
+                  <CommandInput placeholder="Search views..." />
+                  <CommandList>
+                    <CommandEmpty>No views found.</CommandEmpty>
+                    <CommandGroup>
+                      {views.map((view) => (
+                        <CommandItem
+                          key={view.id}
+                          value={view.id}
+                          onSelect={() => {
+                            setSelectedView(view);
+                            fetchContacts();
+                            setIsViewSelectorOpen(false);
+                          }}
+                        >
+                          {view.view_name}
+                          <Check
+                            className={cn(
+                              "ml-auto h-4 w-4",
+                              selectedView?.id === view.id ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                        </CommandItem>
+                      ))}
                       <CommandItem
-                        key={view.id}
-                        value={view.id}
                         onSelect={() => {
-                          setSelectedView(view);
-                          fetchContacts();
+                          setIsViewSelectorOpen(false);
+                          setIsCreateViewOpen(true);
                         }}
+                        className="border-t"
                       >
-                        {view.view_name}
-                        <Check
-                          className={cn(
-                            "ml-auto h-4 w-4",
-                            selectedView?.id === view.id ? "opacity-100" : "opacity-0"
-                          )}
-                        />
+                        <Plus className="mr-2 h-4 w-4" />
+                        Create View
                       </CommandItem>
-                    ))}
-                    <CommandItem
-                      onSelect={() => setIsCreateViewOpen(true)}
-                      className="border-t"
-                    >
-                      <Plus className="mr-2 h-4 w-4" />
-                      Create View
-                    </CommandItem>
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
           </Popover>
 
           {/* Create View Dialog */}
@@ -539,6 +755,10 @@ export default function ContactsRoute() {
               </div>
             </PopoverContent>
           </Popover>
+          <Button onClick={() => setIsCreateContactOpen(true)} variant="default">
+            <UserPlus className="w-4 h-4 mr-2" />
+            Create Contact
+          </Button>
             </div>
           </div>
     
@@ -823,6 +1043,555 @@ export default function ContactsRoute() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          
+          <Dialog open={isCreateContactOpen} onOpenChange={setIsCreateContactOpen}>
+          <DialogContent className="max-w-2xl h-[90vh] flex flex-col p-0"> {/* Changed from max-h to h, added p-0 */}
+              <DialogHeader className="p-6 pb-2">
+                <DialogTitle>Create New Contact</DialogTitle>
+              </DialogHeader>
+              
+              <ScrollArea className="flex-1 px-6">
+                <div className="pb-6">
+                  {/* Basic Information */}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold">Basic Information</h3>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <Label htmlFor="firstName">First Name</Label>
+                        <Input
+                          id="firstName"
+                          value={firstName}
+                          onChange={(e) => setFirstName(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="middleName">Middle Name</Label>
+                        <Input
+                          id="middleName"
+                          value={middleName}
+                          onChange={(e) => setMiddleName(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="lastName">Last Name</Label>
+                        <Input
+                          id="lastName"
+                          value={lastName}
+                          onChange={(e) => setLastName(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <Label htmlFor="race">Race</Label>
+                        <Select value={race} onValueChange={setRace}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select race" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {races.map((r) => (
+                              <SelectItem key={r.id} value={r.id}>
+                                {r.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="gender">Gender</Label>
+                        <Select value={gender} onValueChange={setGender}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select gender" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {genders.map((g) => (
+                              <SelectItem key={g.id} value={g.id}>
+                                {g.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="pronouns">Pronouns</Label>
+                        <Input
+                          id="pronouns"
+                          value={pronouns}
+                          onChange={(e) => setPronouns(e.target.value)}
+                        />
+                      </div>
+                    </div>
+          
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="vanId">VanID</Label>
+                        <Input
+                          id="vanId"
+                          value={vanId}
+                          onChange={(e) => setVanId(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="status">Status</Label>
+                        <Select value={status} onValueChange={setStatus}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {STATUS_OPTIONS.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+          
+                  <Separator />
+          
+                  {/* Emails */}
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="font-semibold">Emails</h3>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEmails([...emails, { email: '', status: 'Active' }])}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Email
+                      </Button>
+                    </div>
+                    {emails.map((email, index) => (
+                      <div key={index} className="grid grid-cols-[1fr,auto,auto] gap-2 items-end">
+                        <div>
+                          <Label>Email Address</Label>
+                          <Input
+                            value={email.email}
+                            onChange={(e) => {
+                              const newEmails = [...emails];
+                              newEmails[index].email = e.target.value;
+                              setEmails(newEmails);
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <Label>Status</Label>
+                          <Select
+                            value={email.status}
+                            onValueChange={(value) => {
+                              const newEmails = [...emails];
+                              newEmails[index].status = value;
+                              setEmails(newEmails);
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {STATUS_OPTIONS.map((s) => (
+                                <SelectItem key={s} value={s}>
+                                  {s}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {emails.length > 1 && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              const newEmails = [...emails];
+                              newEmails.splice(index, 1);
+                              setEmails(newEmails);
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+          
+                  <Separator />
+          
+                  {/* Phone Numbers */}
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="font-semibold">Phone Numbers</h3>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPhones([...phones, { number: '', status: 'Active' }])}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Phone
+                      </Button>
+                    </div>
+                    {phones.map((phone, index) => (
+                      <div key={index} className="grid grid-cols-[1fr,auto,auto] gap-2 items-end">
+                        <div>
+                          <Label>Phone Number</Label>
+                          <Input
+                            value={phone.number}
+                            onChange={(e) => {
+                              const newPhones = [...phones];
+                              newPhones[index].number = e.target.value;
+                              setPhones(newPhones);
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <Label>Status</Label>
+                          <Select
+                            value={phone.status}
+                            onValueChange={(value) => {
+                              const newPhones = [...phones];
+                              newPhones[index].status = value;
+                              setPhones(newPhones);
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {STATUS_OPTIONS.map((s) => (
+                                  <SelectItem key={s} value={s}>
+                                    {s}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {phones.length > 1 && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                const newPhones = [...phones];
+                                newPhones.splice(index, 1);
+                                setPhones(newPhones);
+                              }}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+            
+                    <Separator />
+            
+                    {/* Addresses */}
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <h3 className="font-semibold">Addresses</h3>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setAddresses([...addresses, {
+                            street: '',
+                            street2: '',
+                            city: '',
+                            state: '',
+                            zipCode: '',
+                            status: 'Active'
+                          }])}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Address
+                        </Button>
+                      </div>
+                      {addresses.map((address, index) => (
+                        <div key={index} className="space-y-4 border rounded-lg p-4">
+                          <div className="flex justify-end">
+                            {addresses.length > 1 && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  const newAddresses = [...addresses];
+                                  newAddresses.splice(index, 1);
+                                  setAddresses(newAddresses);
+                                }}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 gap-4">
+                            <div>
+                              <Label>Street Address</Label>
+                              <Input
+                                value={address.street}
+                                onChange={(e) => {
+                                  const newAddresses = [...addresses];
+                                  newAddresses[index].street = e.target.value;
+                                  setAddresses(newAddresses);
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <Label>Secondary Street Address</Label>
+                              <Input
+                                value={address.street2}
+                                onChange={(e) => {
+                                  const newAddresses = [...addresses];
+                                  newAddresses[index].street2 = e.target.value;
+                                  setAddresses(newAddresses);
+                                }}
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-3 gap-4">
+                            <div>
+                              <Label>City</Label>
+                              <Input
+                                value={address.city}
+                                onChange={(e) => {
+                                  const newAddresses = [...addresses];
+                                  newAddresses[index].city = e.target.value;
+                                  setAddresses(newAddresses);
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <Label>State</Label>
+                              <Select
+                                value={address.state}
+                                onValueChange={(value) => {
+                                  const newAddresses = [...addresses];
+                                  newAddresses[index].state = value;
+                                  setAddresses(newAddresses);
+                                }}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select state" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {states.map((s) => (
+                                    <SelectItem key={s.id} value={s.id}>
+                                      {s.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <Label>Zip Code</Label>
+                              <Select
+                                value={address.zipCode}
+                                onValueChange={(value) => {
+                                  const newAddresses = [...addresses];
+                                  newAddresses[index].zipCode = value;
+                                  setAddresses(newAddresses);
+                                }}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select zip code" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {zipCodes.map((z) => (
+                                    <SelectItem key={z.id} value={z.id}>
+                                      {z.code}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          <div>
+                            <Label>Status</Label>
+                            <Select
+                              value={address.status}
+                              onValueChange={(value) => {
+                                const newAddresses = [...addresses];
+                                newAddresses[index].status = value;
+                                setAddresses(newAddresses);
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {STATUS_OPTIONS.map((s) => (
+                                  <SelectItem key={s} value={s}>
+                                    {s}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+            
+                    <Separator />
+            
+                    {/* Social Media Accounts */}
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <h3 className="font-semibold">Social Media Accounts</h3>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSocialMedia([...socialMedia, {
+                            username: '',
+                            service: SOCIAL_MEDIA_SERVICES[0],
+                            status: 'Active'
+                          }])}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Social Media
+                        </Button>
+                      </div>
+                      {socialMedia.map((account, index) => (
+                        <div key={index} className="grid grid-cols-[1fr,1fr,auto,auto] gap-2 items-end">
+                          <div>
+                            <Label>Username</Label>
+                            <Input
+                              value={account.username}
+                              onChange={(e) => {
+                                const newAccounts = [...socialMedia];
+                                newAccounts[index].username = e.target.value;
+                                setSocialMedia(newAccounts);
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <Label>Service</Label>
+                            <Select
+                              value={account.service}
+                              onValueChange={(value) => {
+                                const newAccounts = [...socialMedia];
+                                newAccounts[index].service = value;
+                                setSocialMedia(newAccounts);
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {SOCIAL_MEDIA_SERVICES.map((service) => (
+                                  <SelectItem key={service} value={service}>
+                                    {service}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label>Status</Label>
+                            <Select
+                              value={account.status}
+                              onValueChange={(value) => {
+                                const newAccounts = [...socialMedia];
+                                newAccounts[index].status = value;
+                                setSocialMedia(newAccounts);
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {STATUS_OPTIONS.map((s) => (
+                                  <SelectItem key={s} value={s}>
+                                    {s}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {socialMedia.length > 1 && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                const newAccounts = [...socialMedia];
+                                newAccounts.splice(index, 1);
+                                setSocialMedia(newAccounts);
+                              }}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+            
+                    <Separator />
+            
+                    {/* Tags */}
+                    <div className="space-y-4">
+                      <h3 className="font-semibold">Tags</h3>
+                      <div>
+                        <Label>Select or Create Tags</Label>
+                        <Command className="border rounded-lg">
+                          <CommandInput placeholder="Search tags..." />
+                          <CommandList>
+                            <CommandEmpty>No tags found.</CommandEmpty>
+                            <CommandGroup>
+                              {tags.map((tag) => (
+                                <CommandItem
+                                  key={tag.id}
+                                  value={tag.name}
+                                  onSelect={() => {
+                                    if (selectedTags.some(t => t.id === tag.id)) {
+                                      setSelectedTags(selectedTags.filter(t => t.id !== tag.id));
+                                    } else {
+                                      setSelectedTags([...selectedTags, tag]);
+                                    }
+                                  }}
+                                >
+                                  <div className={cn(
+                                    "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                                    selectedTags.some(t => t.id === tag.id)
+                                      ? "bg-primary text-primary-foreground"
+                                      : "opacity-50 [&_svg]:invisible"
+                                  )}>
+                                    <Check className={cn("h-4 w-4")} />
+                                  </div>
+                                  {tag.name}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {selectedTags.map((tag) => (
+                            <Badge
+                              key={tag.id}
+                              variant="secondary"
+                              className="cursor-pointer"
+                              onClick={() => setSelectedTags(selectedTags.filter(t => t.id !== tag.id))}
+                            >
+                              {tag.name}
+                              <X className="ml-1 h-3 w-3" />
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </ScrollArea>
+            
+                <DialogFooter className="p-6 pt-4 border-t">  {/* Added border and adjusted padding */}
+                  <Button variant="outline" onClick={() => {
+                    resetForm();
+                    setIsCreateContactOpen(false);
+                  }}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleCreateContact}>
+                    Create Contact
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
         </div>
       );
     }
