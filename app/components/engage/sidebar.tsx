@@ -82,7 +82,7 @@ export function EngageSidebar({ user, workspaces }: SidebarProps) {
         <SidebarMenu>
           <SidebarMenuItem>
             <Select value={selectedWorkspace} onValueChange={handleWorkspaceChange}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger>
                 <SelectValue placeholder="Select workspace" />
               </SelectTrigger>
               <SelectContent>
