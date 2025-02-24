@@ -15,7 +15,15 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Checkbox } from "~/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
-import { AlertDialog, AlertDialogTitle, AlertDialogContent, AlertDialogHeader, AlertDialogFooter, AlertDialogCancel } from "~/components/ui/alert-dialog";
+import { AlertDialog, 
+  AlertDialogAction, 
+  AlertDialogCancel, 
+  AlertDialogContent, 
+  AlertDialogDescription, 
+  AlertDialogFooter, 
+  AlertDialogHeader, 
+  AlertDialogTitle } from "~/components/ui/alert-dialog";
+import { Trash2, Edit, Cog } from "lucide-react";
 
 // Utility function for conditional classnames
 function cn(...classes: string[]) {
@@ -141,6 +149,9 @@ export default function ContactsRoute() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreateViewOpen, setIsCreateViewOpen] = useState(false);
   const [newViewName, setNewViewName] = useState('');
+  const [isEditViewOpen, setIsEditViewOpen] = useState(false);
+  const [editViewName, setEditViewName] = useState('');
+  const [isDeleteViewOpen, setIsDeleteViewOpen] = useState(false);
 
   // Initialize Supabase client and set initial workspace
   useEffect(() => {
@@ -334,6 +345,70 @@ export default function ContactsRoute() {
     }
   };
   
+  const editView = async () => {
+    if (!supabase || !selectedView || !editViewName.trim()) return;
+  
+    try {
+      const { data, error } = await supabase
+        .from('contact_views')
+        .update({ view_name: editViewName.trim() })
+        .eq('id', selectedView.id)
+        .select()
+        .single();
+  
+      if (error) {
+        console.error("Error updating view:", error);
+        return;
+      }
+  
+      // Update the selected view with the new name
+      setSelectedView({ ...selectedView, view_name: editViewName.trim() });
+      
+      // Update the views list with the edited view
+      setViews(views.map(view => 
+        view.id === selectedView.id 
+          ? { ...view, view_name: editViewName.trim() }
+          : view
+      ));
+  
+      // Refresh the views list from the server to ensure we have the latest data
+      await fetchViews();
+      
+      setEditViewName('');
+      setIsEditViewOpen(false);
+    } catch (error) {
+      console.error("Unexpected error updating view:", error);
+    }
+  };
+  
+  const deleteView = async () => {
+    if (!supabase || !selectedView) return;
+  
+    try {
+      const { error } = await supabase
+        .from('contact_views')
+        .delete()
+        .eq('id', selectedView.id);
+  
+      if (error) {
+        console.error("Error deleting view:", error);
+        return;
+      }
+  
+      await fetchViews();
+      // Set the first view as selected after deletion
+      if (views.length > 1) {
+        const nextView = views.find(view => view.id !== selectedView.id);
+        setSelectedView(nextView || null);
+      } else {
+        setSelectedView(null);
+      }
+      setIsDeleteViewOpen(false);
+    } catch (error) {
+      console.error("Unexpected error deleting view:", error);
+    }
+  };
+  
   if (isLoading) {
     return <div>Loading...</div>;
   }
@@ -426,7 +501,7 @@ export default function ContactsRoute() {
 
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline">View Settings</Button>
+              <Button variant="outline"><Cog /></Button>
             </PopoverTrigger>
             <PopoverContent className="w-80">
               <div className="space-y-4">
@@ -439,6 +514,28 @@ export default function ContactsRoute() {
                     <label>{formatFieldName(field)}</label>
                   </div>
                 ))}
+                
+                <div className="pt-4 border-t flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      setEditViewName(selectedView?.view_name || '');
+                      setIsEditViewOpen(true);
+                    }}
+                  >
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit View
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    className="w-full"
+                    onClick={() => setIsDeleteViewOpen(true)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete View
+                  </Button>
+                </div>
               </div>
             </PopoverContent>
           </Popover>
@@ -447,16 +544,6 @@ export default function ContactsRoute() {
     
           {/* Filter & Sort Bar */}
           <div className="flex items-center justify-between p-4 border-b">
-            <Input
-              className="w-64"
-              placeholder="Search contacts..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                fetchContacts();
-              }}
-            />
-            
             <div className="flex gap-2">
               <Popover>
                 <PopoverTrigger asChild>
@@ -625,6 +712,16 @@ export default function ContactsRoute() {
                 </PopoverContent>
               </Popover>
             </div>
+            
+            <Input
+              className="w-64"
+              placeholder="Search contacts..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                fetchContacts();
+              }}
+            />
           </div>
     
           {/* Data Grid */}
@@ -675,6 +772,57 @@ export default function ContactsRoute() {
               )}
             </SheetContent>
           </Sheet>
+          
+          {/* Edit View Dialog */}
+          <AlertDialog open={isEditViewOpen} onOpenChange={setIsEditViewOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Edit View</AlertDialogTitle>
+              </AlertDialogHeader>
+              <div className="py-4">
+                <Input
+                  placeholder="View name"
+                  value={editViewName}
+                  onChange={(e) => setEditViewName(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => {
+                  setEditViewName('');
+                  setIsEditViewOpen(false);
+                }}>
+                  Cancel
+                </AlertDialogCancel>
+                <Button onClick={editView}>
+                  Save Changes
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          
+          {/* Delete View Dialog */}
+          <AlertDialog open={isDeleteViewOpen} onOpenChange={setIsDeleteViewOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete View</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete this view? This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setIsDeleteViewOpen(false)}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={deleteView}
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       );
     }
