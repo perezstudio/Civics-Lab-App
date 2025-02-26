@@ -206,41 +206,76 @@ export default function ContactsRoute() {
   const [pronouns, setPronouns] = useState('');
   const [vanId, setVanId] = useState('');
   const [status, setStatus] = useState<typeof STATUS_OPTIONS[number]>('Active');
-  const [emails, setEmails] = useState<EmailEntry[]>([{ email: '', status: 'Active' }]);
-  const [phones, setPhones] = useState<PhoneEntry[]>([{ number: '', status: 'Active' }]);
-  const [addresses, setAddresses] = useState<AddressEntry[]>([{
-    street: '',
-    street2: '',
-    city: '',
-    state: '',
-    zipCode: '',
-    status: 'Active'
-  }]);
-  const [socialMedia, setSocialMedia] = useState<SocialMediaEntry[]>([{
-    username: '',
-    service: SOCIAL_MEDIA_SERVICES[0],
-    status: 'Active'
-  }]);
+  const [emails, setEmails] = useState<EmailEntry[]>([]);
+  const [phones, setPhones] = useState<PhoneEntry[]>([]);
+  const [addresses, setAddresses] = useState<AddressEntry[]>([]);
+  const [socialMedia, setSocialMedia] = useState<SocialMediaEntry[]>([]);
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
   
   useEffect(() => {
-    if (!isCreateContactOpen || !supabase) return;
+    if (SUPABASE_URL && SUPABASE_ANON_KEY && token) {
+      setIsLoading(true);
+      
+      const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+          detectSessionInUrl: false
+        },
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      });
+
+      setSupabase(supabaseClient);
+      
+      const wsId = localStorage.getItem('selectedWorkspace');
+      if (wsId) {
+        setWorkspaceId(wsId);
+      }
+      
+      setIsLoading(false);
+    }
+  }, [SUPABASE_URL, SUPABASE_ANON_KEY, token]);
+
+  useEffect(() => {
+    if (!isCreateContactOpen || !supabase || !workspaceId) return;
   
     const fetchReferenceData = async () => {
       try {
         const [
-          { data: raceData },
-          { data: genderData },
-          { data: stateData },
-          { data: zipData },
-          { data: tagData }
+          { data: raceData, error: raceError },
+          { data: genderData, error: genderError },
+          { data: stateData, error: stateError },
+          { data: zipData, error: zipError },
+          { data: tagData, error: tagError }
         ] = await Promise.all([
-          supabase.from('races').select('id, name'),
-          supabase.from('genders').select('id, name'),
-          supabase.from('states').select('id, name'),
-          supabase.from('zip_codes').select('id, code'),
-          supabase.from('contact_tags').select('id, name')
+          supabase
+            .from('races')
+            .select('id, race'),
+          supabase
+            .from('genders')
+            .select('id, gender'),
+          supabase
+            .from('states')
+            .select('id, name, abbreviation'),
+          supabase
+            .from('zip_codes')
+            .select('id, name'),
+          supabase
+            .from('contact_tags')
+            .select('id, tag')
+            .eq('workspace_id', workspaceId)
         ]);
+
+        // Check for errors
+        if (raceError) console.error('Error fetching races:', raceError);
+        if (genderError) console.error('Error fetching genders:', genderError);
+        if (stateError) console.error('Error fetching states:', stateError);
+        if (zipError) console.error('Error fetching zip codes:', zipError);
+        if (tagError) console.error('Error fetching tags:', tagError);
   
         setRaces(raceData || []);
         setGenders(genderData || []);
@@ -253,10 +288,20 @@ export default function ContactsRoute() {
     };
   
     fetchReferenceData();
-  }, [isCreateContactOpen, supabase]);
+  }, [isCreateContactOpen, supabase, workspaceId]);
   
   const handleCreateContact = async () => {
     if (!supabase || !workspaceId) return;
+  
+    // Validate required fields
+    if (!firstName.trim()) {
+      alert('First name is required');
+      return;
+    }
+    if (!lastName.trim()) {
+      alert('Last name is required');
+      return;
+    }
   
     try {
       // Create the contact
@@ -345,54 +390,12 @@ export default function ContactsRoute() {
     setPronouns('');
     setVanId('');
     setStatus('Active');
-    setEmails([{ email: '', status: 'Active' }]);
-    setPhones([{ number: '', status: 'Active' }]);
-    setAddresses([{
-      street: '',
-      street2: '',
-      city: '',
-      state: '',
-      zipCode: '',
-      status: 'Active'
-    }]);
-    setSocialMedia([{
-      username: '',
-      service: SOCIAL_MEDIA_SERVICES[0],
-      status: 'Active'
-    }]);
+    setEmails([]);
+    setPhones([]);
+    setAddresses([]);
+    setSocialMedia([]);
     setSelectedTags([]);
   };
-
-
-
-  // Initialize Supabase client and set initial workspace
-  useEffect(() => {
-    if (SUPABASE_URL && SUPABASE_ANON_KEY && token) {
-      setIsLoading(true);
-      
-      const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-          detectSessionInUrl: false
-        },
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      });
-
-      setSupabase(supabaseClient);
-      
-      const wsId = localStorage.getItem('selectedWorkspace');
-      if (wsId) {
-        setWorkspaceId(wsId);
-      }
-      
-      setIsLoading(false);
-    }
-  }, [SUPABASE_URL, SUPABASE_ANON_KEY, token]);
 
   // Fetch views when workspace changes
   useEffect(() => {
@@ -1057,15 +1060,20 @@ export default function ContactsRoute() {
                     <h3 className="font-semibold">Basic Information</h3>
                     <div className="grid grid-cols-3 gap-4">
                       <div>
-                        <Label htmlFor="firstName">First Name</Label>
+                        <Label htmlFor="firstName" className="after:content-['*'] after:ml-0.5 after:text-red-500">
+                          First Name
+                        </Label>
                         <Input
                           id="firstName"
                           value={firstName}
                           onChange={(e) => setFirstName(e.target.value)}
+                          required
                         />
                       </div>
                       <div>
-                        <Label htmlFor="middleName">Middle Name</Label>
+                        <Label htmlFor="middleName">
+                          Middle Name
+                        </Label>
                         <Input
                           id="middleName"
                           value={middleName}
@@ -1073,11 +1081,14 @@ export default function ContactsRoute() {
                         />
                       </div>
                       <div>
-                        <Label htmlFor="lastName">Last Name</Label>
+                        <Label htmlFor="lastName" className="after:content-['*'] after:ml-0.5 after:text-red-500">
+                          Last Name
+                        </Label>
                         <Input
                           id="lastName"
                           value={lastName}
                           onChange={(e) => setLastName(e.target.value)}
+                          required
                         />
                       </div>
                     </div>
@@ -1092,7 +1103,7 @@ export default function ContactsRoute() {
                           <SelectContent>
                             {races.map((r) => (
                               <SelectItem key={r.id} value={r.id}>
-                                {r.name}
+                                {r.race}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -1107,7 +1118,7 @@ export default function ContactsRoute() {
                           <SelectContent>
                             {genders.map((g) => (
                               <SelectItem key={g.id} value={g.id}>
-                                {g.name}
+                                {g.gender}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -1165,56 +1176,58 @@ export default function ContactsRoute() {
                         Add Email
                       </Button>
                     </div>
-                    {emails.map((email, index) => (
-                      <div key={index} className="grid grid-cols-[1fr,auto,auto] gap-2 items-end">
-                        <div>
-                          <Label>Email Address</Label>
-                          <Input
-                            value={email.email}
-                            onChange={(e) => {
-                              const newEmails = [...emails];
-                              newEmails[index].email = e.target.value;
-                              setEmails(newEmails);
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <Label>Status</Label>
-                          <Select
-                            value={email.status}
-                            onValueChange={(value) => {
-                              const newEmails = [...emails];
-                              newEmails[index].status = value;
-                              setEmails(newEmails);
-                            }}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {STATUS_OPTIONS.map((s) => (
-                                <SelectItem key={s} value={s}>
-                                  {s}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        {emails.length > 1 && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              const newEmails = [...emails];
-                              newEmails.splice(index, 1);
-                              setEmails(newEmails);
-                            }}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        )}
+                    {emails.length > 0 && (
+                      <div className="space-y-4">
+                        {emails.map((email, index) => (
+                          <div key={index} className="grid grid-cols-[1fr,auto,auto] gap-2 items-end">
+                            <div>
+                              <Label>Email Address</Label>
+                              <Input
+                                value={email.email}
+                                onChange={(e) => {
+                                  const newEmails = [...emails];
+                                  newEmails[index].email = e.target.value;
+                                  setEmails(newEmails);
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <Label>Status</Label>
+                              <Select
+                                value={email.status}
+                                onValueChange={(value) => {
+                                  const newEmails = [...emails];
+                                  newEmails[index].status = value;
+                                  setEmails(newEmails);
+                                }}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {STATUS_OPTIONS.map((s) => (
+                                    <SelectItem key={s} value={s}>
+                                      {s}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                const newEmails = [...emails];
+                                newEmails.splice(index, 1);
+                                setEmails(newEmails);
+                              }}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
           
                   <Separator />
@@ -1232,42 +1245,43 @@ export default function ContactsRoute() {
                         Add Phone
                       </Button>
                     </div>
-                    {phones.map((phone, index) => (
-                      <div key={index} className="grid grid-cols-[1fr,auto,auto] gap-2 items-end">
-                        <div>
-                          <Label>Phone Number</Label>
-                          <Input
-                            value={phone.number}
-                            onChange={(e) => {
-                              const newPhones = [...phones];
-                              newPhones[index].number = e.target.value;
-                              setPhones(newPhones);
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <Label>Status</Label>
-                          <Select
-                            value={phone.status}
-                            onValueChange={(value) => {
-                              const newPhones = [...phones];
-                              newPhones[index].status = value;
-                              setPhones(newPhones);
-                              }}
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {STATUS_OPTIONS.map((s) => (
-                                  <SelectItem key={s} value={s}>
-                                    {s}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          {phones.length > 1 && (
+                    {phones.length > 0 && (
+                      <div className="space-y-4">
+                        {phones.map((phone, index) => (
+                          <div key={index} className="grid grid-cols-[1fr,auto,auto] gap-2 items-end">
+                            <div>
+                              <Label>Phone Number</Label>
+                              <Input
+                                value={phone.number}
+                                onChange={(e) => {
+                                  const newPhones = [...phones];
+                                  newPhones[index].number = e.target.value;
+                                  setPhones(newPhones);
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <Label>Status</Label>
+                              <Select
+                                value={phone.status}
+                                onValueChange={(value) => {
+                                  const newPhones = [...phones];
+                                  newPhones[index].status = value;
+                                  setPhones(newPhones);
+                                }}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {STATUS_OPTIONS.map((s) => (
+                                    <SelectItem key={s} value={s}>
+                                      {s}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -1279,37 +1293,39 @@ export default function ContactsRoute() {
                             >
                               <X className="h-4 w-4" />
                             </Button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-            
-                    <Separator />
-            
-                    {/* Addresses */}
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-center">
-                        <h3 className="font-semibold">Addresses</h3>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setAddresses([...addresses, {
-                            street: '',
-                            street2: '',
-                            city: '',
-                            state: '',
-                            zipCode: '',
-                            status: 'Active'
-                          }])}
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Address
-                        </Button>
+                          </div>
+                        ))}
                       </div>
-                      {addresses.map((address, index) => (
-                        <div key={index} className="space-y-4 border rounded-lg p-4">
-                          <div className="flex justify-end">
-                            {addresses.length > 1 && (
+                    )}
+                  </div>
+            
+                  <Separator />
+            
+                  {/* Addresses */}
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="font-semibold">Addresses</h3>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setAddresses([...addresses, {
+                          street: '',
+                          street2: '',
+                          city: '',
+                          state: '',
+                          zipCode: '',
+                          status: 'Active'
+                        }])}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Address
+                      </Button>
+                    </div>
+                    {addresses.length > 0 && (
+                      <div className="space-y-4">
+                        {addresses.map((address, index) => (
+                          <div key={index} className="space-y-4 border rounded-lg p-4">
+                            <div className="flex justify-end">
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -1321,192 +1337,194 @@ export default function ContactsRoute() {
                               >
                                 <X className="h-4 w-4" />
                               </Button>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-1 gap-4">
-                            <div>
-                              <Label>Street Address</Label>
-                              <Input
-                                value={address.street}
-                                onChange={(e) => {
-                                  const newAddresses = [...addresses];
-                                  newAddresses[index].street = e.target.value;
-                                  setAddresses(newAddresses);
-                                }}
-                              />
+                            </div>
+                            <div className="grid grid-cols-1 gap-4">
+                              <div>
+                                <Label>Street Address</Label>
+                                <Input
+                                  value={address.street}
+                                  onChange={(e) => {
+                                    const newAddresses = [...addresses];
+                                    newAddresses[index].street = e.target.value;
+                                    setAddresses(newAddresses);
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <Label>Secondary Street Address</Label>
+                                <Input
+                                  value={address.street2}
+                                  onChange={(e) => {
+                                    const newAddresses = [...addresses];
+                                    newAddresses[index].street2 = e.target.value;
+                                    setAddresses(newAddresses);
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4">
+                              <div>
+                                <Label>City</Label>
+                                <Input
+                                  value={address.city}
+                                  onChange={(e) => {
+                                    const newAddresses = [...addresses];
+                                    newAddresses[index].city = e.target.value;
+                                    setAddresses(newAddresses);
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <Label>State</Label>
+                                <Select
+                                  value={address.state}
+                                  onValueChange={(value) => {
+                                    const newAddresses = [...addresses];
+                                    newAddresses[index].state = value;
+                                    setAddresses(newAddresses);
+                                  }}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select state" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {states.map((s) => (
+                                      <SelectItem key={s.id} value={s.id}>
+                                        {s.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div>
+                                <Label>Zip Code</Label>
+                                <Select
+                                  value={address.zipCode}
+                                  onValueChange={(value) => {
+                                    const newAddresses = [...addresses];
+                                    newAddresses[index].zipCode = value;
+                                    setAddresses(newAddresses);
+                                  }}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select zip code" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {zipCodes.map((z) => (
+                                      <SelectItem key={z.id} value={z.id}>
+                                        {z.code}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
                             </div>
                             <div>
-                              <Label>Secondary Street Address</Label>
-                              <Input
-                                value={address.street2}
-                                onChange={(e) => {
-                                  const newAddresses = [...addresses];
-                                  newAddresses[index].street2 = e.target.value;
-                                  setAddresses(newAddresses);
-                                }}
-                              />
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-3 gap-4">
-                            <div>
-                              <Label>City</Label>
-                              <Input
-                                value={address.city}
-                                onChange={(e) => {
-                                  const newAddresses = [...addresses];
-                                  newAddresses[index].city = e.target.value;
-                                  setAddresses(newAddresses);
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <Label>State</Label>
+                              <Label>Status</Label>
                               <Select
-                                value={address.state}
+                                value={address.status}
                                 onValueChange={(value) => {
                                   const newAddresses = [...addresses];
-                                  newAddresses[index].state = value;
+                                  newAddresses[index].status = value;
                                   setAddresses(newAddresses);
                                 }}
                               >
                                 <SelectTrigger>
-                                  <SelectValue placeholder="Select state" />
+                                  <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {states.map((s) => (
-                                    <SelectItem key={s.id} value={s.id}>
-                                      {s.name}
+                                  {STATUS_OPTIONS.map((s) => (
+                                    <SelectItem key={s} value={s}>
+                                      {s}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
                             </div>
-                            <div>
-                              <Label>Zip Code</Label>
-                              <Select
-                                value={address.zipCode}
-                                onValueChange={(value) => {
-                                  const newAddresses = [...addresses];
-                                  newAddresses[index].zipCode = value;
-                                  setAddresses(newAddresses);
-                                }}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select zip code" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {zipCodes.map((z) => (
-                                    <SelectItem key={z.id} value={z.id}>
-                                      {z.code}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
                           </div>
-                          <div>
-                            <Label>Status</Label>
-                            <Select
-                              value={address.status}
-                              onValueChange={(value) => {
-                                const newAddresses = [...addresses];
-                                newAddresses[index].status = value;
-                                setAddresses(newAddresses);
-                              }}
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {STATUS_OPTIONS.map((s) => (
-                                  <SelectItem key={s} value={s}>
-                                    {s}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-            
-                    <Separator />
-            
-                    {/* Social Media Accounts */}
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-center">
-                        <h3 className="font-semibold">Social Media Accounts</h3>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setSocialMedia([...socialMedia, {
-                            username: '',
-                            service: SOCIAL_MEDIA_SERVICES[0],
-                            status: 'Active'
-                          }])}
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Social Media
-                        </Button>
+                        ))}
                       </div>
-                      {socialMedia.map((account, index) => (
-                        <div key={index} className="grid grid-cols-[1fr,1fr,auto,auto] gap-2 items-end">
-                          <div>
-                            <Label>Username</Label>
-                            <Input
-                              value={account.username}
-                              onChange={(e) => {
-                                const newAccounts = [...socialMedia];
-                                newAccounts[index].username = e.target.value;
-                                setSocialMedia(newAccounts);
-                              }}
-                            />
-                          </div>
-                          <div>
-                            <Label>Service</Label>
-                            <Select
-                              value={account.service}
-                              onValueChange={(value) => {
-                                const newAccounts = [...socialMedia];
-                                newAccounts[index].service = value;
-                                setSocialMedia(newAccounts);
-                              }}
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {SOCIAL_MEDIA_SERVICES.map((service) => (
-                                  <SelectItem key={service} value={service}>
-                                    {service}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div>
-                            <Label>Status</Label>
-                            <Select
-                              value={account.status}
-                              onValueChange={(value) => {
-                                const newAccounts = [...socialMedia];
-                                newAccounts[index].status = value;
-                                setSocialMedia(newAccounts);
-                              }}
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {STATUS_OPTIONS.map((s) => (
-                                  <SelectItem key={s} value={s}>
-                                    {s}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          {socialMedia.length > 1 && (
+                    )}
+                  </div>
+            
+                  <Separator />
+            
+                  {/* Social Media Accounts */}
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="font-semibold">Social Media Accounts</h3>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSocialMedia([...socialMedia, {
+                          username: '',
+                          service: SOCIAL_MEDIA_SERVICES[0],
+                          status: 'Active'
+                        }])}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Social Media
+                      </Button>
+                    </div>
+                    {socialMedia.length > 0 && (
+                      <div className="space-y-4">
+                        {socialMedia.map((account, index) => (
+                          <div key={index} className="grid grid-cols-[1fr,1fr,auto,auto] gap-2 items-end">
+                            <div>
+                              <Label>Username</Label>
+                              <Input
+                                value={account.username}
+                                onChange={(e) => {
+                                  const newAccounts = [...socialMedia];
+                                  newAccounts[index].username = e.target.value;
+                                  setSocialMedia(newAccounts);
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <Label>Service</Label>
+                              <Select
+                                value={account.service}
+                                onValueChange={(value) => {
+                                  const newAccounts = [...socialMedia];
+                                  newAccounts[index].service = value;
+                                  setSocialMedia(newAccounts);
+                                }}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {SOCIAL_MEDIA_SERVICES.map((service) => (
+                                    <SelectItem key={service} value={service}>
+                                      {service}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <Label>Status</Label>
+                              <Select
+                                value={account.status}
+                                onValueChange={(value) => {
+                                  const newAccounts = [...socialMedia];
+                                  newAccounts[index].status = value;
+                                  setSocialMedia(newAccounts);
+                                }}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {STATUS_OPTIONS.map((s) => (
+                                    <SelectItem key={s} value={s}>
+                                      {s}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -1518,80 +1536,81 @@ export default function ContactsRoute() {
                             >
                               <X className="h-4 w-4" />
                             </Button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
             
-                    <Separator />
+                  <Separator />
             
-                    {/* Tags */}
-                    <div className="space-y-4">
-                      <h3 className="font-semibold">Tags</h3>
-                      <div>
-                        <Label>Select or Create Tags</Label>
-                        <Command className="border rounded-lg">
-                          <CommandInput placeholder="Search tags..." />
-                          <CommandList>
-                            <CommandEmpty>No tags found.</CommandEmpty>
-                            <CommandGroup>
-                              {tags.map((tag) => (
-                                <CommandItem
-                                  key={tag.id}
-                                  value={tag.name}
-                                  onSelect={() => {
-                                    if (selectedTags.some(t => t.id === tag.id)) {
-                                      setSelectedTags(selectedTags.filter(t => t.id !== tag.id));
-                                    } else {
-                                      setSelectedTags([...selectedTags, tag]);
-                                    }
-                                  }}
-                                >
-                                  <div className={cn(
-                                    "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
-                                    selectedTags.some(t => t.id === tag.id)
-                                      ? "bg-primary text-primary-foreground"
-                                      : "opacity-50 [&_svg]:invisible"
-                                  )}>
-                                    <Check className={cn("h-4 w-4")} />
-                                  </div>
-                                  {tag.name}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {selectedTags.map((tag) => (
-                            <Badge
-                              key={tag.id}
-                              variant="secondary"
-                              className="cursor-pointer"
-                              onClick={() => setSelectedTags(selectedTags.filter(t => t.id !== tag.id))}
-                            >
-                              {tag.name}
-                              <X className="ml-1 h-3 w-3" />
-                            </Badge>
-                          ))}
-                        </div>
+                  {/* Tags */}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold">Tags</h3>
+                    <div>
+                      <Label>Select or Create Tags</Label>
+                      <Command className="border rounded-lg">
+                        <CommandInput placeholder="Search tags..." />
+                        <CommandList>
+                          <CommandEmpty>No tags found.</CommandEmpty>
+                          <CommandGroup>
+                            {tags.map((tag) => (
+                              <CommandItem
+                                key={tag.id}
+                                value={tag.name}
+                                onSelect={() => {
+                                  if (selectedTags.some(t => t.id === tag.id)) {
+                                    setSelectedTags(selectedTags.filter(t => t.id !== tag.id));
+                                  } else {
+                                    setSelectedTags([...selectedTags, tag]);
+                                  }
+                                }}
+                              >
+                                <div className={cn(
+                                  "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                                  selectedTags.some(t => t.id === tag.id)
+                                    ? "bg-primary text-primary-foreground"
+                                    : "opacity-50 [&_svg]:invisible"
+                                )}>
+                                  <Check className={cn("h-4 w-4")} />
+                                </div>
+                                {tag.name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {selectedTags.map((tag) => (
+                          <Badge
+                            key={tag.id}
+                            variant="secondary"
+                            className="cursor-pointer"
+                            onClick={() => setSelectedTags(selectedTags.filter(t => t.id !== tag.id))}
+                          >
+                            {tag.name}
+                            <X className="ml-1 h-3 w-3" />
+                          </Badge>
+                        ))}
                       </div>
                     </div>
                   </div>
-                </ScrollArea>
+                </div>
+              </ScrollArea>
             
-                <DialogFooter className="p-6 pt-4 border-t">  {/* Added border and adjusted padding */}
-                  <Button variant="outline" onClick={() => {
-                    resetForm();
-                    setIsCreateContactOpen(false);
-                  }}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleCreateContact}>
-                    Create Contact
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+              <DialogFooter className="p-6 pt-4 border-t">  {/* Added border and adjusted padding */}
+                <Button variant="outline" onClick={() => {
+                  resetForm();
+                  setIsCreateContactOpen(false);
+                }}>
+                  Cancel
+                </Button>
+                <Button onClick={handleCreateContact}>
+                  Create Contact
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       );
     }
