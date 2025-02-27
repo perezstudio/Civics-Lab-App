@@ -1560,7 +1560,7 @@ export default function ContactsRoute() {
               <ScrollArea className="flex-1 px-6">
                 <div className="pb-6">
                   {/* Basic Information */}
-                  <div className="space-y-4">
+                  <div className="space-y-4 p-2">
                     <h3 className="font-semibold">Basic Information</h3>
                     <div className="grid grid-cols-3 gap-4">
                       <div>
