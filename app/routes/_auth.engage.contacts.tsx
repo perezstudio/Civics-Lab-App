@@ -1,7 +1,7 @@
 // app/routes/_auth.engage.contacts.tsx
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Check, ChevronsUpDown, Users, Plus } from 'lucide-react';
 import { AuthService } from '~/services/auth.server';
 import { ApiService } from '~/services/api.server';
@@ -27,7 +27,7 @@ import { AlertDialog,
   AlertDialogFooter, 
   AlertDialogHeader, 
   AlertDialogTitle } from "~/components/ui/alert-dialog";
-import { Trash2, Edit, Cog, Plus, X, UserPlus, Info } from "lucide-react";
+import { Trash2, Edit, Cog, Plus, X, UserPlus, Info, GripVertical } from "lucide-react";
 import { getSupabaseClient, isSupabaseInitialized } from "~/services/supabase.client";
 import { toast } from "sonner";
 
@@ -272,6 +272,12 @@ export default function ContactsRoute() {
     social_media_accounts: 200,
     actions: 100
   });
+  
+  // Add state for filtered contacts
+  const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
+  
+  // Add state for filter open
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   
   useEffect(() => {
     // Check if Supabase is initialized
@@ -780,6 +786,144 @@ export default function ContactsRoute() {
     }
   };
   
+  // Add this function to apply filters
+  const applyFilters = useCallback(() => {
+    if (!contacts || contacts.length === 0) {
+      setFilteredContacts([]);
+      return;
+    }
+    
+    // Start with search query filter
+    let filtered = contacts.filter(contact => {
+      if (!searchQuery) return true;
+      const query = searchQuery.toLowerCase();
+      return (
+        (contact.first_name && contact.first_name.toLowerCase().includes(query)) ||
+        (contact.last_name && contact.last_name.toLowerCase().includes(query)) ||
+        (contact.middle_name && contact.middle_name.toLowerCase().includes(query)) ||
+        (contact.vanid && contact.vanid && contact.vanid.toLowerCase().includes(query))
+      );
+    });
+    
+    // Apply view filters if they exist
+    if (selectedView?.filters && selectedView.filters.length > 0) {
+      filtered = filtered.filter(contact => {
+        // Return true only if all filters match
+        return selectedView.filters.every(filter => {
+          if (!filter.field || !filter.operator || filter.value === undefined) {
+            return true; // Skip incomplete filters
+          }
+          
+          const fieldValue = getNestedValue(contact, filter.field);
+          
+          // Handle different operators
+          switch (filter.operator) {
+            case 'equals':
+              return String(fieldValue).toLowerCase() === filter.value.toLowerCase();
+            case 'contains':
+              return String(fieldValue).toLowerCase().includes(filter.value.toLowerCase());
+            case 'starts_with':
+              return String(fieldValue).toLowerCase().startsWith(filter.value.toLowerCase());
+            case 'ends_with':
+              return String(fieldValue).toLowerCase().endsWith(filter.value.toLowerCase());
+            case 'greater_than':
+              return Number(fieldValue) > Number(filter.value);
+            case 'less_than':
+              return Number(fieldValue) < Number(filter.value);
+            default:
+              return true;
+          }
+        });
+      });
+    }
+    
+    setFilteredContacts(filtered);
+  }, [contacts, searchQuery, selectedView]);
+  
+  // Helper function to get nested values (for arrays like emails, phones, etc.)
+  const getNestedValue = (obj, path) => {
+    if (!path) return undefined;
+    
+    // Handle special cases for arrays
+    if (path === 'emails') {
+      return obj.emails?.map(e => e.email).join(', ') || '';
+    } else if (path === 'phone_numbers') {
+      return obj.phones?.map(p => p.number).join(', ') || '';
+    } else if (path === 'addresses') {
+      return obj.addresses?.map(a => `${a.street}, ${a.city}`).join('; ') || '';
+    } else if (path === 'social_media_accounts') {
+      return obj.social_media?.map(s => `${s.service}: ${s.username}`).join('; ') || '';
+    } else if (path === 'race') {
+      return obj.race?.race || '';
+    } else if (path === 'gender') {
+      return obj.gender?.gender || '';
+    }
+    
+    // For regular fields
+    return obj[path];
+  };
+  
+  // Apply filters whenever relevant state changes
+  useEffect(() => {
+    applyFilters();
+  }, [applyFilters, contacts, searchQuery, selectedView]);
+  
+  // Function to move a filter up or down
+  const moveFilter = (index, direction) => {
+    if (!selectedView) return;
+    
+    const newFilters = [...selectedView.filters];
+    const newIndex = index + direction;
+    
+    // Check if the new index is valid
+    if (newIndex < 0 || newIndex >= newFilters.length) return;
+    
+    // Swap the filters
+    [newFilters[index], newFilters[newIndex]] = [newFilters[newIndex], newFilters[index]];
+    
+    // Update the view
+    const updatedView = {
+      ...selectedView,
+      filters: newFilters
+    };
+    
+    setSelectedView(updatedView);
+    updateViewInDatabase(updatedView);
+  };
+  
+  // Function to update the view in the database
+  const updateViewInDatabase = async (view) => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+    
+    try {
+      const { error } = await supabase
+        .from('contact_views')
+        .update({
+          filters: view.filters,
+          sorting: view.sorting,
+          first_name: view.first_name,
+          middle_name: view.middle_name,
+          last_name: view.last_name,
+          race: view.race,
+          gender: view.gender,
+          pronouns: view.pronouns,
+          vanid: view.vanid,
+          addresses: view.addresses,
+          phone_numbers: view.phone_numbers,
+          emails: view.emails,
+          social_media_accounts: view.social_media_accounts
+        })
+        .eq('id', view.id);
+      
+      if (error) {
+        console.error("Error updating view:", error);
+      }
+    } catch (error) {
+      console.error("Unexpected error updating view:", error);
+    }
+  };
+  
   if (!isClientReady) {
     return <div>Loading...</div>;
   }
@@ -807,27 +951,15 @@ export default function ContactsRoute() {
     );
   };
 
-  // Modify the renderContactsTable function to use the hook from the parent component
+  // Modify the renderContactsTable function to use filteredContacts
   const renderContactsTable = () => {
     if (isLoading) {
       return <div className="p-4 text-center">Loading contacts...</div>;
     }
 
-    if (!contacts || contacts.length === 0) {
+    if (!filteredContacts || filteredContacts.length === 0) {
       return <div className="p-4 text-center">No contacts found</div>;
     }
-
-    // Filter contacts based on search query
-    const filteredContacts = contacts.filter(contact => {
-      if (!searchQuery) return true;
-      const query = searchQuery.toLowerCase();
-      return (
-        (contact.first_name && contact.first_name.toLowerCase().includes(query)) ||
-        (contact.last_name && contact.last_name.toLowerCase().includes(query)) ||
-        (contact.middle_name && contact.middle_name.toLowerCase().includes(query)) ||
-        (contact.vanid && contact.vanid && contact.vanid.toLowerCase().includes(query))
-      );
-    });
 
     // Create a resizable header component
     const ResizableHeader = ({ id, children }) => (
@@ -1311,93 +1443,194 @@ export default function ContactsRoute() {
           {/* Filter & Sort Bar */}
           <div className="flex items-center justify-between p-4 border-b">
             <div className="flex gap-2">
-              <Popover>
+              <Popover open={isFilterOpen} onOpenChange={setIsFilterOpen}>
                 <PopoverTrigger asChild>
-                  <Button variant="outline">Filter</Button>
+                  <Button variant="outline" className="flex items-center gap-2">
+                    Filter
+                    {selectedView?.filters && selectedView.filters.length > 0 && (
+                      <Badge variant="secondary" className="ml-1 rounded-full px-2 py-0 text-xs">
+                        {selectedView.filters.length}
+                      </Badge>
+                    )}
+                  </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-80">
+                <PopoverContent className="w-[600px] p-4" align="start" side="top">
                   <div className="space-y-4">
-                    {selectedView?.filters.map((filter, index) => (
-                      <div key={index} className="space-y-2">
-                        <Select
-                          value={filter.field}
-                          onValueChange={(value) => {
-                            const newFilters = [...(selectedView?.filters || [])];
-                            newFilters[index].field = value;
-                            if (selectedView) {
-                              setSelectedView({
-                                ...selectedView,
-                                filters: newFilters
-                              });
-                            }
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select field" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {VIEW_FIELDS.filter(field => selectedView[field])
-                              .map(field => (
-                                <SelectItem key={field} value={field}>
-                                  {formatFieldName(field)}
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-    
-                        <Select
-                          value={filter.operator}
-                          onValueChange={(value) => {
-                            const newFilters = [...(selectedView?.filters || [])];
-                            newFilters[index].operator = value;
-                            if (selectedView) {
-                              setSelectedView({
-                                ...selectedView,
-                                filters: newFilters
-                              });
-                            }
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select operator" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="equals">Equals</SelectItem>
-                            <SelectItem value="contains">Contains</SelectItem>
-                          </SelectContent>
-                        </Select>
-    
-                        <Input
-                          placeholder="Value"
-                          value={filter.value}
-                          onChange={(e) => {
-                            const newFilters = [...(selectedView?.filters || [])];
-                            newFilters[index].value = e.target.value;
-                            if (selectedView) {
-                              setSelectedView({
-                                ...selectedView,
-                                filters: newFilters
-                              });
-                            }
-                          }}
-                        />
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium">Filters</h4>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          if (selectedView) {
+                            const updatedView = {
+                              ...selectedView,
+                              filters: [
+                                ...(selectedView.filters || []),
+                                { field: VIEW_FIELDS[0], operator: 'equals', value: '' }
+                              ]
+                            };
+                            setSelectedView(updatedView);
+                            updateViewInDatabase(updatedView);
+                          }
+                        }}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add Filter
+                      </Button>
+                    </div>
+                    
+                    {selectedView?.filters && selectedView.filters.length > 0 ? (
+                      <div className="space-y-3">
+                        {selectedView.filters.map((filter, index) => (
+                          <div key={index} className="border rounded-md p-3 bg-background">
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-1">
+                                <GripVertical className="h-5 w-5 text-muted-foreground cursor-move" />
+                              </div>
+                              
+                              <div className="flex-1 grid grid-cols-3 gap-2">
+                                <Select
+                                  value={filter.field}
+                                  onValueChange={(value) => {
+                                    const newFilters = [...selectedView.filters];
+                                    newFilters[index].field = value;
+                                    const updatedView = {
+                                      ...selectedView,
+                                      filters: newFilters
+                                    };
+                                    setSelectedView(updatedView);
+                                    updateViewInDatabase(updatedView);
+                                  }}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select field" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {VIEW_FIELDS.filter(field => selectedView[field])
+                                      .map(field => (
+                                        <SelectItem key={field} value={field}>
+                                          {formatFieldName(field)}
+                                        </SelectItem>
+                                      ))}
+                                  </SelectContent>
+                                </Select>
+                                
+                                <Select
+                                  value={filter.operator}
+                                  onValueChange={(value) => {
+                                    const newFilters = [...selectedView.filters];
+                                    newFilters[index].operator = value;
+                                    const updatedView = {
+                                      ...selectedView,
+                                      filters: newFilters
+                                    };
+                                    setSelectedView(updatedView);
+                                    updateViewInDatabase(updatedView);
+                                  }}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select operator" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="equals">Equals</SelectItem>
+                                    <SelectItem value="contains">Contains</SelectItem>
+                                    <SelectItem value="starts_with">Starts with</SelectItem>
+                                    <SelectItem value="ends_with">Ends with</SelectItem>
+                                    <SelectItem value="greater_than">Greater than</SelectItem>
+                                    <SelectItem value="less_than">Less than</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                
+                                <Input
+                                  placeholder="Value"
+                                  value={filter.value}
+                                  onChange={(e) => {
+                                    const newFilters = [...selectedView.filters];
+                                    newFilters[index].value = e.target.value;
+                                    const updatedView = {
+                                      ...selectedView,
+                                      filters: newFilters
+                                    };
+                                    setSelectedView(updatedView);
+                                    updateViewInDatabase(updatedView);
+                                  }}
+                                />
+                              </div>
+                              
+                              <div className="flex items-center gap-1">
+                                {index > 0 && (
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-7 w-7"
+                                    onClick={() => moveFilter(index, -1)}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-chevron-up">
+                                      <path d="m18 15-6-6-6 6"/>
+                                    </svg>
+                                  </Button>
+                                )}
+                                {index < selectedView.filters.length - 1 && (
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-7 w-7"
+                                    onClick={() => moveFilter(index, 1)}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-chevron-down">
+                                      <path d="m6 9 6 6 6-6"/>
+                                    </svg>
+                                  </Button>
+                                )}
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() => {
+                                    const newFilters = [...selectedView.filters];
+                                    newFilters.splice(index, 1);
+                                    const updatedView = {
+                                      ...selectedView,
+                                      filters: newFilters
+                                    };
+                                    setSelectedView(updatedView);
+                                    updateViewInDatabase(updatedView);
+                                  }}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                    <Button
-                      onClick={() => {
-                        if (selectedView) {
-                          setSelectedView({
-                            ...selectedView,
-                            filters: [
-                              ...(selectedView.filters || []),
-                              { field: '', operator: 'equals', value: '' }
-                            ]
-                          });
-                        }
-                      }}
-                    >
-                      Add Filter
-                    </Button>
+                    ) : (
+                      <div className="text-center py-4 text-muted-foreground">
+                        No filters added. Click "Add Filter" to create one.
+                      </div>
+                    )}
+                    
+                    {selectedView?.filters && selectedView.filters.length > 0 && (
+                      <div className="flex justify-end">
+                        <Button 
+                          variant="destructive" 
+                          size="sm"
+                          onClick={() => {
+                            if (selectedView) {
+                              const updatedView = {
+                                ...selectedView,
+                                filters: []
+                              };
+                              setSelectedView(updatedView);
+                              updateViewInDatabase(updatedView);
+                            }
+                          }}
+                        >
+                          Clear All Filters
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </PopoverContent>
               </Popover>
@@ -1485,7 +1718,6 @@ export default function ContactsRoute() {
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
-                fetchContacts();
               }}
             />
           </div>
@@ -2111,8 +2343,8 @@ export default function ContactsRoute() {
                   </div>
                 </div>
               </ScrollArea>
-            
-              <DialogFooter className="p-6 pt-4 border-t">  {/* Added border and adjusted padding */}
+              
+              <DialogFooter className="p-6 pt-2">
                 <Button variant="outline" onClick={() => {
                   resetForm();
                   setIsCreateContactOpen(false);
@@ -2127,4 +2359,4 @@ export default function ContactsRoute() {
           </Dialog>
         </div>
       );
-    }
+}
