@@ -1,19 +1,22 @@
 // app/routes/login.tsx
-import { json, redirect } from "@remix-run/node";
+import { json, redirect, ActionFunctionArgs } from "@remix-run/node";
 import { Form, useActionData, useNavigation } from "@remix-run/react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { Alert, AlertDescription } from "~/components/ui/alert";
-import { AuthService } from "~/services/auth.server"
+import { AuthService } from "~/services/supabase";
 
-export async function action({ request }) {
+export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData();
-  const email = formData.get("email");
-  const password = formData.get("password");
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
 
-  const { error, success, headers } = await AuthService.signIn({
-    request,
+  if (!email || !password) {
+    return json({ error: "Email and password are required" });
+  }
+
+  const { error, success, headers, user } = await AuthService.signIn({
     email,
     password,
   });
@@ -22,7 +25,8 @@ export async function action({ request }) {
     return json({ error });
   }
 
-  if (success) {
+  if (success && headers) {
+    // Redirect to the app route after successful login
     return redirect("/app", {
       headers,
     });
@@ -32,7 +36,7 @@ export async function action({ request }) {
 }
 
 export default function LoginPage() {
-  const actionData = useActionData();
+  const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
 

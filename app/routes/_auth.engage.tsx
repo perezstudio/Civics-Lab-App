@@ -1,17 +1,17 @@
 // app/routes/_auth.engage.tsx
 import { json, LoaderFunctionArgs } from "@remix-run/node";
-import { Outlet, useLoaderData, useRouteLoaderData } from "@remix-run/react";
-import { ApiService } from "~/services/api.server";
+import { Outlet, useLoaderData } from "@remix-run/react";
 import { EngageSidebar } from "~/components/engage/sidebar";
-import { AuthService } from "~/services/auth.server";
+import { AuthService, DataService } from "~/services/supabase";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   // Get the user directly from AuthService
   const user = await AuthService.requireAuth(request);
   
-  const { data: workspaces, error } = await ApiService.fetchData({
+  const { data: workspaces, error } = await DataService.fetchData({
     table: 'workspaces',
-    query: { created_by: user.id }
+    query: { created_by: user.id },
+    request
   });
 
   if (error) {
@@ -30,7 +30,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export default function EngageRoute() {
-  // Get data from this route's loader instead of parent
+  // Get data from this route's loader
   const { user, workspaces, error } = useLoaderData<typeof loader>();
 
   if (error) {
