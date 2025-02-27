@@ -1,7 +1,7 @@
 // app/routes/_auth.engage.contacts.tsx
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Check, ChevronsUpDown, Users, Plus } from 'lucide-react';
 import { AuthService } from '~/services/auth.server';
 import { ApiService } from '~/services/api.server';
@@ -129,6 +129,42 @@ const formatFieldName = (field: string) => {
   return field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 };
 
+// Add this new utility function for resizing columns
+function useResizableColumns(initialWidths = {}) {
+  const [columnWidths, setColumnWidths] = useState(initialWidths);
+  const [resizing, setResizing] = useState(null);
+  const startPositionRef = useRef(0);
+  const columnWidthRef = useRef(0);
+
+  const handleResizeStart = (e, columnId) => {
+    e.preventDefault();
+    setResizing(columnId);
+    startPositionRef.current = e.clientX;
+    columnWidthRef.current = columnWidths[columnId] || 200; // Default width
+    
+    const handleMouseMove = (moveEvent) => {
+      const delta = moveEvent.clientX - startPositionRef.current;
+      const newWidth = Math.max(100, columnWidthRef.current + delta); // Minimum width of 100px
+      
+      setColumnWidths(prev => ({
+        ...prev,
+        [columnId]: newWidth
+      }));
+    };
+    
+    const handleMouseUp = () => {
+      setResizing(null);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  return { columnWidths, handleResizeStart, resizing };
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await AuthService.requireAuth(request);
   
@@ -219,6 +255,23 @@ export default function ContactsRoute() {
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
   
   const [selectedContactForDetails, setSelectedContactForDetails] = useState<Contact | null>(null);
+  
+  // Add the resizable columns hook here at the component level
+  const { columnWidths, handleResizeStart, resizing } = useResizableColumns({
+    checkbox: 40,
+    first_name: 200,
+    middle_name: 150,
+    last_name: 200,
+    race: 150,
+    gender: 150,
+    pronouns: 150,
+    vanid: 150,
+    emails: 200,
+    phone_numbers: 200,
+    addresses: 250,
+    social_media_accounts: 200,
+    actions: 100
+  });
   
   useEffect(() => {
     // Check if Supabase is initialized
@@ -754,7 +807,7 @@ export default function ContactsRoute() {
     );
   };
 
-  // Define renderContactsTable inside the component
+  // Modify the renderContactsTable function to use the hook from the parent component
   const renderContactsTable = () => {
     if (isLoading) {
       return <div className="p-4 text-center">Loading contacts...</div>;
@@ -776,95 +829,184 @@ export default function ContactsRoute() {
       );
     });
 
+    // Create a resizable header component
+    const ResizableHeader = ({ id, children }) => (
+      <TableHead 
+        style={{ 
+          width: `${columnWidths[id] || 200}px`, 
+          position: 'relative',
+          minWidth: `${columnWidths[id] || 200}px`,
+          maxWidth: `${columnWidths[id] || 200}px`
+        }}
+        className={resizing === id ? 'select-none' : ''}
+      >
+        <div className="flex items-center justify-between">
+          <span>{children}</span>
+          <div
+            className="absolute right-0 top-0 h-full w-4 cursor-col-resize hover:bg-gray-200"
+            onMouseDown={(e) => handleResizeStart(e, id)}
+          >
+            <div className={`h-full w-1 mx-auto ${resizing === id ? 'bg-primary' : 'bg-gray-300'}`}></div>
+          </div>
+        </div>
+      </TableHead>
+    );
+
     return (
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-[40px]">
-              <Checkbox />
-            </TableHead>
-            <TableHead>Name</TableHead>
-            {selectedView?.race && <TableHead>Race</TableHead>}
-            {selectedView?.gender && <TableHead>Gender</TableHead>}
-            {selectedView?.pronouns && <TableHead>Pronouns</TableHead>}
-            {selectedView?.vanid && <TableHead>VAN ID</TableHead>}
-            {selectedView?.emails && <TableHead>Emails</TableHead>}
-            {selectedView?.phone_numbers && <TableHead>Phone Numbers</TableHead>}
-            {selectedView?.addresses && <TableHead>Addresses</TableHead>}
-            {selectedView?.social_media_accounts && <TableHead>Social Media</TableHead>}
-            <TableHead className="text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {filteredContacts.map(contact => (
-            <TableRow key={contact.id}>
-              <TableCell>
-                <Checkbox />
-              </TableCell>
-              <TableCell>
-                {contact.first_name} {contact.middle_name ? contact.middle_name + ' ' : ''}{contact.last_name}
-              </TableCell>
-              {selectedView?.race && (
-                <TableCell>{contact.race ? contact.race.race : '-'}</TableCell>
-              )}
-              {selectedView?.gender && (
-                <TableCell>{contact.gender ? contact.gender.gender : '-'}</TableCell>
-              )}
-              {selectedView?.pronouns && (
-                <TableCell>{contact.pronouns || '-'}</TableCell>
-              )}
-              {selectedView?.vanid && (
-                <TableCell>{contact.vanid || '-'}</TableCell>
-              )}
-              {selectedView?.emails && (
-                <TableCell>
-                  <MultipleBadges 
-                    items={contact.emails} 
-                    getLabel={item => item.email}
-                    limit={2}
-                  />
-                </TableCell>
-              )}
-              {selectedView?.phone_numbers && (
-                <TableCell>
-                  <MultipleBadges 
-                    items={contact.phones} 
-                    getLabel={item => item.number}
-                    limit={2}
-                  />
-                </TableCell>
-              )}
-              {selectedView?.addresses && (
-                <TableCell>
-                  <MultipleBadges 
-                    items={contact.addresses} 
-                    getLabel={item => `${item.street}, ${item.city}`}
-                    limit={1}
-                  />
-                </TableCell>
-              )}
-              {selectedView?.social_media_accounts && (
-                <TableCell>
-                  <MultipleBadges 
-                    items={contact.social_media || []} 
-                    getLabel={item => `${item.service || 'Unknown'}: ${item.username || 'Unknown'}`}
-                    limit={2}
-                  />
-                </TableCell>
-              )}
-              <TableCell className="text-right">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  onClick={() => setSelectedContactForDetails(contact)}
-                >
-                  <Info className="h-4 w-4" />
-                </Button>
-              </TableCell>
+      <div className="overflow-x-auto">
+        <Table className="relative w-full table-fixed">
+          <TableHeader>
+            <TableRow>
+              {selectedView?.first_name && <ResizableHeader id="first_name">First Name</ResizableHeader>}
+              {selectedView?.middle_name && <ResizableHeader id="middle_name">Middle Name</ResizableHeader>}
+              {selectedView?.last_name && <ResizableHeader id="last_name">Last Name</ResizableHeader>}
+              {selectedView?.race && <ResizableHeader id="race">Race</ResizableHeader>}
+              {selectedView?.gender && <ResizableHeader id="gender">Gender</ResizableHeader>}
+              {selectedView?.pronouns && <ResizableHeader id="pronouns">Pronouns</ResizableHeader>}
+              {selectedView?.vanid && <ResizableHeader id="vanid">VAN ID</ResizableHeader>}
+              {selectedView?.emails && <ResizableHeader id="emails">Emails</ResizableHeader>}
+              {selectedView?.phone_numbers && <ResizableHeader id="phone_numbers">Phone Numbers</ResizableHeader>}
+              {selectedView?.addresses && <ResizableHeader id="addresses">Addresses</ResizableHeader>}
+              {selectedView?.social_media_accounts && <ResizableHeader id="social_media_accounts">Social Media</ResizableHeader>}
+              <ResizableHeader id="actions">Actions</ResizableHeader>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {filteredContacts.map(contact => (
+              <TableRow key={contact.id}>
+                {selectedView?.first_name && (
+                  <TableCell style={{ 
+                    width: `${columnWidths.first_name || 200}px`,
+                    minWidth: `${columnWidths.first_name || 200}px`,
+                    maxWidth: `${columnWidths.first_name || 200}px`
+                  }}>
+                    {contact.first_name}
+                  </TableCell>
+                )}
+                {selectedView?.middle_name && (
+                  <TableCell style={{ 
+                    width: `${columnWidths.middle_name || 200}px`,
+                    minWidth: `${columnWidths.middle_name || 200}px`,
+                    maxWidth: `${columnWidths.middle_name || 200}px`
+                  }}>
+                    {contact.middle_name}
+                  </TableCell>
+                )}
+                {selectedView?.last_name && (
+                  <TableCell style={{ 
+                    width: `${columnWidths.last_name || 200}px`,
+                    minWidth: `${columnWidths.last_name || 200}px`,
+                    maxWidth: `${columnWidths.last_name || 200}px`
+                  }}>
+                    {contact.last_name}
+                  </TableCell>
+                )}
+                {selectedView?.race && (
+                  <TableCell style={{ 
+                    width: `${columnWidths.race || 150}px`,
+                    minWidth: `${columnWidths.race || 150}px`,
+                    maxWidth: `${columnWidths.race || 150}px`
+                  }}>
+                    {contact.race ? contact.race.race : '-'}
+                  </TableCell>
+                )}
+                {selectedView?.gender && (
+                  <TableCell style={{ 
+                    width: `${columnWidths.gender || 150}px`,
+                    minWidth: `${columnWidths.gender || 150}px`,
+                    maxWidth: `${columnWidths.gender || 150}px`
+                  }}>
+                    {contact.gender ? contact.gender.gender : '-'}
+                  </TableCell>
+                )}
+                {selectedView?.pronouns && (
+                  <TableCell style={{ 
+                    width: `${columnWidths.pronouns || 150}px`,
+                    minWidth: `${columnWidths.pronouns || 150}px`,
+                    maxWidth: `${columnWidths.pronouns || 150}px`
+                  }}>
+                    {contact.pronouns || '-'}
+                  </TableCell>
+                )}
+                {selectedView?.vanid && (
+                  <TableCell style={{ 
+                    width: `${columnWidths.vanid || 150}px`,
+                    minWidth: `${columnWidths.vanid || 150}px`,
+                    maxWidth: `${columnWidths.vanid || 150}px`
+                  }}>
+                    {contact.vanid || '-'}
+                  </TableCell>
+                )}
+                {selectedView?.emails && (
+                  <TableCell style={{ 
+                    width: `${columnWidths.emails || 200}px`,
+                    minWidth: `${columnWidths.emails || 200}px`,
+                    maxWidth: `${columnWidths.emails || 200}px`
+                  }}>
+                    <MultipleBadges 
+                      items={contact.emails} 
+                      getLabel={item => item.email}
+                      limit={2}
+                    />
+                  </TableCell>
+                )}
+                {selectedView?.phone_numbers && (
+                  <TableCell style={{ 
+                    width: `${columnWidths.phone_numbers || 200}px`,
+                    minWidth: `${columnWidths.phone_numbers || 200}px`,
+                    maxWidth: `${columnWidths.phone_numbers || 200}px`
+                  }}>
+                    <MultipleBadges 
+                      items={contact.phones} 
+                      getLabel={item => item.number}
+                      limit={2}
+                    />
+                  </TableCell>
+                )}
+                {selectedView?.addresses && (
+                  <TableCell style={{ 
+                    width: `${columnWidths.addresses || 250}px`,
+                    minWidth: `${columnWidths.addresses || 250}px`,
+                    maxWidth: `${columnWidths.addresses || 250}px`
+                  }}>
+                    <MultipleBadges 
+                      items={contact.addresses} 
+                      getLabel={item => `${item.street}, ${item.city}`}
+                      limit={1}
+                    />
+                  </TableCell>
+                )}
+                {selectedView?.social_media_accounts && (
+                  <TableCell style={{ 
+                    width: `${columnWidths.social_media_accounts || 200}px`,
+                    minWidth: `${columnWidths.social_media_accounts || 200}px`,
+                    maxWidth: `${columnWidths.social_media_accounts || 200}px`
+                  }}>
+                    <MultipleBadges 
+                      items={contact.social_media || []} 
+                      getLabel={item => `${item.service || 'Unknown'}: ${item.username || 'Unknown'}`}
+                      limit={2}
+                    />
+                  </TableCell>
+                )}
+                <TableCell className="text-right" style={{ 
+                  width: `${columnWidths.actions || 100}px`,
+                  minWidth: `${columnWidths.actions || 100}px`,
+                  maxWidth: `${columnWidths.actions || 100}px`
+                }}>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => setSelectedContactForDetails(contact)}
+                  >
+                    <Info className="h-4 w-4" />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     );
   };
 
