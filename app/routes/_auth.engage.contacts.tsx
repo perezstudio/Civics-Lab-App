@@ -1558,49 +1558,23 @@ export default function ContactsRoute() {
                                 />
                               </div>
                               
-                              <div className="flex items-center gap-1">
-                                {index > 0 && (
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="h-7 w-7"
-                                    onClick={() => moveFilter(index, -1)}
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-chevron-up">
-                                      <path d="m18 15-6-6-6 6"/>
-                                    </svg>
-                                  </Button>
-                                )}
-                                {index < selectedView.filters.length - 1 && (
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="h-7 w-7"
-                                    onClick={() => moveFilter(index, 1)}
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-chevron-down">
-                                      <path d="m6 9 6 6 6-6"/>
-                                    </svg>
-                                  </Button>
-                                )}
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                  onClick={() => {
-                                    const newFilters = [...selectedView.filters];
-                                    newFilters.splice(index, 1);
-                                    const updatedView = {
-                                      ...selectedView,
-                                      filters: newFilters
-                                    };
-                                    setSelectedView(updatedView);
-                                    updateViewInDatabase(updatedView);
-                                  }}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </div>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => {
+                                  const newFilters = [...selectedView.filters];
+                                  newFilters.splice(index, 1);
+                                  const updatedView = {
+                                    ...selectedView,
+                                    filters: newFilters
+                                  };
+                                  setSelectedView(updatedView);
+                                  updateViewInDatabase(updatedView);
+                                }}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
                             </div>
                           </div>
                         ))}
