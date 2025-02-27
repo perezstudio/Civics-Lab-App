@@ -7,7 +7,7 @@ import { AuthService } from '~/services/auth.server';
 import { ApiService } from '~/services/api.server';
 import { sessionStorage } from '~/services/supabase.server';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "~/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "~/components/ui/sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "~/components/ui/command";
 import { Button } from "~/components/ui/button";
@@ -27,8 +27,9 @@ import { AlertDialog,
   AlertDialogFooter, 
   AlertDialogHeader, 
   AlertDialogTitle } from "~/components/ui/alert-dialog";
-import { Trash2, Edit, Cog, Plus, X, UserPlus } from "lucide-react";
+import { Trash2, Edit, Cog, Plus, X, UserPlus, Info } from "lucide-react";
 import { getSupabaseClient, isSupabaseInitialized } from "~/services/supabase.client";
+import { toast } from "sonner";
 
 // Utility function for conditional classnames
 function cn(...classes: string[]) {
@@ -182,6 +183,7 @@ export default function ContactsRoute() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isClientReady, setIsClientReady] = useState(false);
   const [isCreateViewOpen, setIsCreateViewOpen] = useState(false);
   const [newViewName, setNewViewName] = useState('');
   const [isEditViewOpen, setIsEditViewOpen] = useState(false);
@@ -216,8 +218,8 @@ export default function ContactsRoute() {
   const [socialMedia, setSocialMedia] = useState<SocialMediaEntry[]>([]);
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
   
-  const [isClientReady, setIsClientReady] = useState(false);
-
+  const [selectedContactForDetails, setSelectedContactForDetails] = useState<Contact | null>(null);
+  
   useEffect(() => {
     // Check if Supabase is initialized
     if (isSupabaseInitialized()) {
@@ -454,11 +456,12 @@ export default function ContactsRoute() {
           await fetchContacts();
         } catch (fetchError) {
           console.error('Error refreshing contacts:', fetchError);
-          // Don't block the success message if refresh fails
         }
 
-        // Show success message
-        alert('Contact created successfully!');
+        // Show success toast using Sonner
+        toast.success("Contact created", {
+          description: "The contact was created successfully.",
+        });
 
       } catch (contactCreationError) {
         console.error('Error in contact creation step:', contactCreationError);
@@ -467,7 +470,11 @@ export default function ContactsRoute() {
 
     } catch (error) {
       console.error('Error creating contact:', error);
-      alert(error.message || 'An error occurred while creating the contact');
+      
+      // Show error toast using Sonner
+      toast.error("Error", {
+        description: error.message || "An error occurred while creating the contact",
+      });
     }
   };
   
@@ -555,38 +562,34 @@ export default function ContactsRoute() {
     const supabase = getSupabaseClient();
     if (!supabase || !workspaceId) return;
 
-    let query = supabase
-      .from('contacts')
-      .select('*')
-      .eq('workspace_id', workspaceId);
+    setIsLoading(true);
+    try {
+      // Fetch contacts with related data - using correct column names
+      const { data: contactsData, error: contactsError } = await supabase
+        .from('contacts')
+        .select(`
+          *,
+          race:race_id(id, race),
+          gender:gender_id(id, gender),
+          emails:contact_emails(*),
+          phones:contact_phones(*),
+          addresses:contact_addresses(*),
+          social_media:contact_social_media_accounts(*)
+        `)
+        .eq('workspace_id', workspaceId)
+        .order('created_at', { ascending: false });
 
-    if (selectedView?.filters) {
-      selectedView.filters.forEach(filter => {
-        switch (filter.operator) {
-          case 'equals':
-            query = query.eq(filter.field, filter.value);
-            break;
-          case 'contains':
-            query = query.ilike(filter.field, `%${filter.value}%`);
-            break;
-        }
-      });
-    }
+      if (contactsError) {
+        console.error('Error fetching contacts:', contactsError);
+        return;
+      }
 
-    if (selectedView?.sorting) {
-      selectedView.sorting.forEach(sort => {
-        query = query.order(sort.field, { ascending: sort.direction === 'asc' });
-      });
-    }
-
-    if (searchQuery) {
-      query = query.or(`name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%`);
-    }
-
-    const { data, error } = await query;
-    
-    if (data && !error) {
-      setContacts(data);
+      console.log('Fetched contacts:', contactsData);
+      setContacts(contactsData || []);
+    } catch (error) {
+      console.error('Exception fetching contacts:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -727,6 +730,304 @@ export default function ContactsRoute() {
   if (!isClientReady) {
     return <div>Loading...</div>;
   }
+
+  // Create a component to display multiple items as badges
+  const MultipleBadges = ({ items, getLabel, limit = 3 }) => {
+    if (!items || items.length === 0) return null;
+    
+    const displayItems = items.slice(0, limit);
+    const remaining = items.length - limit;
+    
+    return (
+      <div className="flex flex-wrap gap-1">
+        {displayItems.map((item, index) => (
+          <Badge key={index} variant="outline" className="text-xs">
+            {getLabel(item)}
+          </Badge>
+        ))}
+        {remaining > 0 && (
+          <Badge variant="secondary" className="text-xs">
+            +{remaining} more
+          </Badge>
+        )}
+      </div>
+    );
+  };
+
+  // Define renderContactsTable inside the component
+  const renderContactsTable = () => {
+    if (isLoading) {
+      return <div className="p-4 text-center">Loading contacts...</div>;
+    }
+
+    if (!contacts || contacts.length === 0) {
+      return <div className="p-4 text-center">No contacts found</div>;
+    }
+
+    // Filter contacts based on search query
+    const filteredContacts = contacts.filter(contact => {
+      if (!searchQuery) return true;
+      const query = searchQuery.toLowerCase();
+      return (
+        (contact.first_name && contact.first_name.toLowerCase().includes(query)) ||
+        (contact.last_name && contact.last_name.toLowerCase().includes(query)) ||
+        (contact.middle_name && contact.middle_name.toLowerCase().includes(query)) ||
+        (contact.vanid && contact.vanid && contact.vanid.toLowerCase().includes(query))
+      );
+    });
+
+    return (
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[40px]">
+              <Checkbox />
+            </TableHead>
+            <TableHead>Name</TableHead>
+            {selectedView?.race && <TableHead>Race</TableHead>}
+            {selectedView?.gender && <TableHead>Gender</TableHead>}
+            {selectedView?.pronouns && <TableHead>Pronouns</TableHead>}
+            {selectedView?.vanid && <TableHead>VAN ID</TableHead>}
+            {selectedView?.emails && <TableHead>Emails</TableHead>}
+            {selectedView?.phone_numbers && <TableHead>Phone Numbers</TableHead>}
+            {selectedView?.addresses && <TableHead>Addresses</TableHead>}
+            {selectedView?.social_media_accounts && <TableHead>Social Media</TableHead>}
+            <TableHead className="text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {filteredContacts.map(contact => (
+            <TableRow key={contact.id}>
+              <TableCell>
+                <Checkbox />
+              </TableCell>
+              <TableCell>
+                {contact.first_name} {contact.middle_name ? contact.middle_name + ' ' : ''}{contact.last_name}
+              </TableCell>
+              {selectedView?.race && (
+                <TableCell>{contact.race ? contact.race.race : '-'}</TableCell>
+              )}
+              {selectedView?.gender && (
+                <TableCell>{contact.gender ? contact.gender.gender : '-'}</TableCell>
+              )}
+              {selectedView?.pronouns && (
+                <TableCell>{contact.pronouns || '-'}</TableCell>
+              )}
+              {selectedView?.vanid && (
+                <TableCell>{contact.vanid || '-'}</TableCell>
+              )}
+              {selectedView?.emails && (
+                <TableCell>
+                  <MultipleBadges 
+                    items={contact.emails} 
+                    getLabel={item => item.email}
+                    limit={2}
+                  />
+                </TableCell>
+              )}
+              {selectedView?.phone_numbers && (
+                <TableCell>
+                  <MultipleBadges 
+                    items={contact.phones} 
+                    getLabel={item => item.number}
+                    limit={2}
+                  />
+                </TableCell>
+              )}
+              {selectedView?.addresses && (
+                <TableCell>
+                  <MultipleBadges 
+                    items={contact.addresses} 
+                    getLabel={item => `${item.street}, ${item.city}`}
+                    limit={1}
+                  />
+                </TableCell>
+              )}
+              {selectedView?.social_media_accounts && (
+                <TableCell>
+                  <MultipleBadges 
+                    items={contact.social_media || []} 
+                    getLabel={item => `${item.service || 'Unknown'}: ${item.username || 'Unknown'}`}
+                    limit={2}
+                  />
+                </TableCell>
+              )}
+              <TableCell className="text-right">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => setSelectedContactForDetails(contact)}
+                >
+                  <Info className="h-4 w-4" />
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    );
+  };
+
+  // Add the contact details sheet component
+  const ContactDetailsSheet = () => {
+    if (!selectedContactForDetails) return null;
+    
+    return (
+      <Sheet open={!!selectedContactForDetails} onOpenChange={(open) => {
+        if (!open) setSelectedContactForDetails(null);
+      }}>
+        <SheetContent className="w-[70%] sm:max-w-[70%]" side="right">
+          <SheetHeader>
+            <SheetTitle>Contact Details</SheetTitle>
+            <SheetDescription>
+              View detailed information about this contact
+            </SheetDescription>
+          </SheetHeader>
+          
+          <div className="mt-6 space-y-6">
+            {/* Basic Information */}
+            <div>
+              <h3 className="text-lg font-medium">Basic Information</h3>
+              <div className="mt-3 grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Name</p>
+                  <p className="text-base">
+                    {selectedContactForDetails.first_name} 
+                    {selectedContactForDetails.middle_name ? ` ${selectedContactForDetails.middle_name} ` : ' '}
+                    {selectedContactForDetails.last_name}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Race</p>
+                  <p className="text-base">
+                    {selectedContactForDetails.race ? selectedContactForDetails.race.race : 'Not specified'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Gender</p>
+                  <p className="text-base">
+                    {selectedContactForDetails.gender ? selectedContactForDetails.gender.gender : 'Not specified'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Pronouns</p>
+                  <p className="text-base">
+                    {selectedContactForDetails.pronouns || 'Not specified'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">VAN ID</p>
+                  <p className="text-base">
+                    {selectedContactForDetails.vanid || 'Not specified'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Status</p>
+                  <p className="text-base capitalize">
+                    {selectedContactForDetails.status || 'Unknown'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Contact Information */}
+            <div>
+              <h3 className="text-lg font-medium">Contact Information</h3>
+              
+              {/* Emails */}
+              <div className="mt-3">
+                <p className="text-sm text-muted-foreground">Email Addresses</p>
+                {selectedContactForDetails.emails && selectedContactForDetails.emails.length > 0 ? (
+                  <div className="mt-1 space-y-2">
+                    {selectedContactForDetails.emails.map((email, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <Badge variant={email.status === 'primary' ? 'default' : 'outline'}>
+                          {email.status}
+                        </Badge>
+                        <p>{email.email}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm italic">No email addresses</p>
+                )}
+              </div>
+              
+              {/* Phone Numbers */}
+              <div className="mt-3">
+                <p className="text-sm text-muted-foreground">Phone Numbers</p>
+                {selectedContactForDetails.phones && selectedContactForDetails.phones.length > 0 ? (
+                  <div className="mt-1 space-y-2">
+                    {selectedContactForDetails.phones.map((phone, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <Badge variant={phone.status === 'primary' ? 'default' : 'outline'}>
+                          {phone.status}
+                        </Badge>
+                        <p>{phone.number}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm italic">No phone numbers</p>
+                )}
+              </div>
+              
+              {/* Addresses */}
+              <div className="mt-3">
+                <p className="text-sm text-muted-foreground">Addresses</p>
+                {selectedContactForDetails.addresses && selectedContactForDetails.addresses.length > 0 ? (
+                  <div className="mt-1 space-y-3">
+                    {selectedContactForDetails.addresses.map((address, index) => (
+                      <div key={index} className="border p-3 rounded-md">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant={address.status === 'primary' ? 'default' : 'outline'}>
+                            {address.status}
+                          </Badge>
+                          <p className="font-medium">{address.type || 'Address'}</p>
+                        </div>
+                        <p>{address.street}</p>
+                        {address.street2 && <p>{address.street2}</p>}
+                        <p>{address.city}, {address.state} {address.zip}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm italic">No addresses</p>
+                )}
+              </div>
+              
+              {/* Social Media */}
+              <div className="mt-3">
+                <p className="text-sm text-muted-foreground">Social Media</p>
+                {selectedContactForDetails.social_media && selectedContactForDetails.social_media.length > 0 ? (
+                  <div className="mt-1 space-y-2">
+                    {selectedContactForDetails.social_media.map((account, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <Badge variant="outline">{account.service}</Badge>
+                        <p>{account.username}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm italic">No social media accounts</p>
+                )}
+              </div>
+            </div>
+            
+            {/* Actions */}
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={() => setSelectedContactForDetails(null)}>
+                Close
+              </Button>
+              <Button variant="default" onClick={() => handleEditContact(selectedContactForDetails)}>
+                Edit Contact
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+    );
+  };
 
   return (
     <div className="h-screen overflow-auto">
@@ -1049,52 +1350,10 @@ export default function ContactsRoute() {
     
           {/* Data Grid */}
           <div className="flex-1 overflow-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {selectedView && VIEW_FIELDS
-                    .filter(field => selectedView[field])
-                    .map(field => (
-                      <TableHead key={field}>{formatFieldName(field)}</TableHead>
-                    ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {contacts.map(contact => (
-                  <TableRow
-                    key={contact.id}
-                    className="cursor-pointer"
-                    onClick={() => setSelectedContact(contact)}
-                  >
-                    {selectedView && VIEW_FIELDS
-                      .filter(field => selectedView[field])
-                      .map(field => (
-                        <TableCell key={field}>{contact[field]}</TableCell>
-                      ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            {renderContactsTable()}
           </div>
     
-          {/* Contact Details Sheet */}
-          <Sheet open={!!selectedContact} onOpenChange={() => setSelectedContact(null)}>
-            <SheetContent className="w-96">
-              <SheetHeader>
-                <SheetTitle>Contact Details</SheetTitle>
-              </SheetHeader>
-              {selectedContact && (
-                <div className="mt-4 space-y-4">
-                  {Object.entries(selectedContact).map(([key, value]) => (
-                    <div key={key} className="space-y-1">
-                      <div className="font-medium">{formatFieldName(key)}</div>
-                      <div>{String(value)}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </SheetContent>
-          </Sheet>
+          <ContactDetailsSheet />
           
           {/* Edit View Dialog */}
           <AlertDialog open={isEditViewOpen} onOpenChange={setIsEditViewOpen}>
