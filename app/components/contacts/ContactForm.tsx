@@ -11,7 +11,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "~/components/ui/command";
 import { 
   STATUS_OPTIONS, 
+  EMAIL_STATUS_OPTIONS,
+  PHONE_STATUS_OPTIONS,
+  ADDRESS_STATUS_OPTIONS,
   SOCIAL_MEDIA_SERVICES,
+  SOCIAL_MEDIA_STATUS_OPTIONS,
   RaceOption,
   GenderOption,
   StateOption,
@@ -21,7 +25,12 @@ import {
   PhoneEntry,
   AddressEntry,
   SocialMediaEntry,
-  Tag
+  ContactStatus,
+  ContactEmailStatus,
+  ContactPhoneStatus,
+  ContactAddressStatus,
+  SocialMediaService,
+  SocialMediaStatus
 } from '~/components/contacts/types';
 import { cn } from "~/lib/utils";
 
@@ -58,15 +67,15 @@ interface ContactFormProps {
   setPronouns: (value: string) => void;
   vanId: string;
   setVanId: (value: string) => void;
-  status: string;
-  setStatus: (value: string) => void;
+  status: ContactStatus;
+  setStatus: (value: ContactStatus) => void;
   
   // Array field values
   emails: EmailEntry[];
   phones: PhoneEntry[];
   addresses: AddressEntry[];
   socialMedia: SocialMediaEntry[];
-  selectedTags: Tag[];
+  selectedTags: TagOption[];
   
   // Array field helpers
   addEmail: () => void;
@@ -81,7 +90,7 @@ interface ContactFormProps {
   addSocialMedia: () => void;
   updateSocialMedia: (index: number, data: Partial<SocialMediaEntry>) => void;
   removeSocialMedia: (index: number) => void;
-  toggleTag: (tag: Tag) => void;
+  toggleTag: (tag: TagOption) => void;
   
   // Form actions
   resetForm: () => void;
@@ -258,7 +267,10 @@ export function ContactForm({
                 </div>
                 <div>
                   <Label htmlFor="status">Status</Label>
-                  <Select value={status} onValueChange={setStatus}>
+                  <Select 
+                    value={status} 
+                    onValueChange={(value) => setStatus(value as ContactStatus)}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select status">
                         {STATUS_OPTIONS.find(s => s.value === status)?.label}
@@ -306,15 +318,15 @@ export function ContactForm({
                         <Label>Status</Label>
                         <Select
                           value={email.status}
-                          onValueChange={(value) => updateEmail(index, { status: value })}
+                          onValueChange={(value) => updateEmail(index, { status: value as ContactEmailStatus })}
                         >
                           <SelectTrigger>
                             <SelectValue>
-                              {STATUS_OPTIONS.find(s => s.value === email.status)?.label}
+                              {EMAIL_STATUS_OPTIONS.find(s => s.value === email.status)?.label}
                             </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            {STATUS_OPTIONS.map((s) => (
+                            {EMAIL_STATUS_OPTIONS.map((s) => (
                               <SelectItem key={s.value} value={s.value}>
                                 {s.label}
                               </SelectItem>
@@ -369,15 +381,15 @@ export function ContactForm({
                         <Label>Status</Label>
                         <Select
                           value={phone.status}
-                          onValueChange={(value) => updatePhone(index, { status: value })}
+                          onValueChange={(value) => updatePhone(index, { status: value as ContactPhoneStatus })}
                         >
                           <SelectTrigger>
                             <SelectValue>
-                              {STATUS_OPTIONS.find(s => s.value === phone.status)?.label}
+                              {PHONE_STATUS_OPTIONS.find(s => s.value === phone.status)?.label}
                             </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            {STATUS_OPTIONS.map((s) => (
+                            {PHONE_STATUS_OPTIONS.map((s) => (
                               <SelectItem key={s.value} value={s.value}>
                                 {s.label}
                               </SelectItem>
@@ -495,15 +507,15 @@ export function ContactForm({
                         <Label>Status</Label>
                         <Select
                           value={address.status}
-                          onValueChange={(value) => updateAddress(index, { status: value })}
+                          onValueChange={(value) => updateAddress(index, { status: value as ContactAddressStatus })}
                         >
                           <SelectTrigger>
                             <SelectValue>
-                              {STATUS_OPTIONS.find(s => s.value === address.status)?.label}
+                              {ADDRESS_STATUS_OPTIONS.find(s => s.value === address.status)?.label}
                             </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            {STATUS_OPTIONS.map((s) => (
+                            {ADDRESS_STATUS_OPTIONS.map((s) => (
                               <SelectItem key={s.value} value={s.value}>
                                 {s.label}
                               </SelectItem>
@@ -551,7 +563,7 @@ export function ContactForm({
                         <Label>Service</Label>
                         <Select
                           value={account.service}
-                          onValueChange={(value) => updateSocialMedia(index, { service: value })}
+                          onValueChange={(value) => updateSocialMedia(index, { service: value as SocialMediaService })}
                         >
                           <SelectTrigger>
                             <SelectValue />
@@ -559,7 +571,7 @@ export function ContactForm({
                           <SelectContent>
                             {SOCIAL_MEDIA_SERVICES.map((service) => (
                               <SelectItem key={service} value={service}>
-                                {service}
+                                {service.charAt(0).toUpperCase() + service.slice(1)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -569,15 +581,15 @@ export function ContactForm({
                         <Label>Status</Label>
                         <Select
                           value={account.status}
-                          onValueChange={(value) => updateSocialMedia(index, { status: value })}
+                          onValueChange={(value) => updateSocialMedia(index, { status: value as SocialMediaStatus })}
                         >
                           <SelectTrigger>
                             <SelectValue>
-                              {STATUS_OPTIONS.find(s => s.value === account.status)?.label}
+                              {SOCIAL_MEDIA_STATUS_OPTIONS.find(s => s.value === account.status)?.label}
                             </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            {STATUS_OPTIONS.map((s) => (
+                            {SOCIAL_MEDIA_STATUS_OPTIONS.map((s) => (
                               <SelectItem key={s.value} value={s.value}>
                                 {s.label}
                               </SelectItem>

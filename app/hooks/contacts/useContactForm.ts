@@ -1,20 +1,28 @@
 // app/hooks/contacts/useContactForm.ts
 import { useState, useEffect } from 'react';
-import { getClientSupabase } from '~/services/supabase';
+import { getSupabaseClient } from '~/services/auth.client';
 import { toast } from 'sonner';
 import { 
   EmailEntry, 
   PhoneEntry, 
   AddressEntry, 
   SocialMediaEntry, 
-  Tag,
+  TagOption,
   RaceOption,
   GenderOption,
   StateOption,
   ZipCodeOption,
-  TagOption,
   STATUS_OPTIONS,
-  SOCIAL_MEDIA_SERVICES
+  EMAIL_STATUS_OPTIONS,
+  PHONE_STATUS_OPTIONS,
+  ADDRESS_STATUS_OPTIONS,
+  SOCIAL_MEDIA_SERVICES,
+  SOCIAL_MEDIA_STATUS_OPTIONS,
+  ContactStatus,
+  ContactEmailStatus,
+  ContactPhoneStatus,
+  ContactAddressStatus,
+  SocialMediaStatus
 } from '~/components/contacts/types';
 
 interface UseContactFormOptions {
@@ -47,18 +55,18 @@ export function useContactForm({
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [race, setRace] = useState('');
-  const [gender, setGender] = useState('');
+  const [race, setRace] = useState<string>('');
+  const [gender, setGender] = useState<string>('');
   const [pronouns, setPronouns] = useState('');
   const [vanId, setVanId] = useState('');
-  const [status, setStatus] = useState(STATUS_OPTIONS[0].value);
+  const [status, setStatus] = useState<ContactStatus>(STATUS_OPTIONS[0].value);
   
   // Nested form arrays
   const [emails, setEmails] = useState<EmailEntry[]>([]);
   const [phones, setPhones] = useState<PhoneEntry[]>([]);
   const [addresses, setAddresses] = useState<AddressEntry[]>([]);
   const [socialMedia, setSocialMedia] = useState<SocialMediaEntry[]>([]);
-  const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
+  const [selectedTags, setSelectedTags] = useState<TagOption[]>([]);
   
   // Fetch reference data when form is opened
   useEffect(() => {
@@ -67,7 +75,7 @@ export function useContactForm({
     const fetchReferenceData = async () => {
       try {
         setIsLoading(true);
-        const supabase = getClientSupabase();
+        const supabase = getSupabaseClient();
         
         if (!supabase) {
           console.error('Supabase client not initialized');
@@ -157,7 +165,7 @@ export function useContactForm({
     
     try {
       setIsSubmitting(true);
-      const supabase = getClientSupabase();
+      const supabase = getSupabaseClient();
       
       if (!supabase) {
         throw new Error('Supabase client not initialized');
@@ -227,11 +235,11 @@ export function useContactForm({
               .from('contact_addresses')
               .insert(addresses.map(address => ({
                 contact_id: contact.id,
-                street: address.street,
-                street2: address.street2,
+                street_address: address.street,
+                secondary_street_address: address.street2 || null,
                 city: address.city,
-                state_id: address.state,
-                zip_code_id: address.zipCode,
+                state_id: address.state || null,
+                zip_code_id: address.zipCode || null,
                 status: address.status,
                 created_by: userId,
                 updated_by: userId
@@ -245,7 +253,7 @@ export function useContactForm({
               .insert(socialMedia.map(account => ({
                 contact_id: contact.id,
                 username: account.username,
-                service: account.service,
+                service_type: account.service,
                 status: account.status,
                 created_by: userId,
                 updated_by: userId
@@ -259,7 +267,7 @@ export function useContactForm({
               .insert(selectedTags.map(tag => ({
                 contact_id: contact.id,
                 tag_id: tag.id,
-                created_by: userId,
+                created_by: userId
               })))]
           : [])
       ]);
@@ -286,7 +294,7 @@ export function useContactForm({
   
   // Email field helpers
   const addEmail = () => {
-    setEmails([...emails, { email: '', status: STATUS_OPTIONS[0].value }]);
+    setEmails([...emails, { email: '', status: EMAIL_STATUS_OPTIONS[0].value }]);
   };
   
   const updateEmail = (index: number, data: Partial<EmailEntry>) => {
@@ -301,7 +309,7 @@ export function useContactForm({
   
   // Phone field helpers
   const addPhone = () => {
-    setPhones([...phones, { number: '', status: STATUS_OPTIONS[0].value }]);
+    setPhones([...phones, { number: '', status: PHONE_STATUS_OPTIONS[0].value }]);
   };
   
   const updatePhone = (index: number, data: Partial<PhoneEntry>) => {
@@ -322,7 +330,7 @@ export function useContactForm({
       city: '',
       state: '',
       zipCode: '',
-      status: STATUS_OPTIONS[0].value
+      status: ADDRESS_STATUS_OPTIONS[0].value
     }]);
   };
   
@@ -341,7 +349,7 @@ export function useContactForm({
     setSocialMedia([...socialMedia, {
       username: '',
       service: SOCIAL_MEDIA_SERVICES[0],
-      status: STATUS_OPTIONS[0].value
+      status: SOCIAL_MEDIA_STATUS_OPTIONS[0].value
     }]);
   };
   
@@ -356,7 +364,7 @@ export function useContactForm({
   };
   
   // Tag helpers
-  const toggleTag = (tag: Tag) => {
+  const toggleTag = (tag: TagOption) => {
     if (selectedTags.some(t => t.id === tag.id)) {
       setSelectedTags(selectedTags.filter(t => t.id !== tag.id));
     } else {

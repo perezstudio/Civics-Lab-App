@@ -131,7 +131,7 @@ export function ContactDetails({
                       <div className="mt-1 space-y-2">
                         {contact.emails.map((email, index) => (
                           <div key={index} className="flex items-center gap-2">
-                            <Badge variant={email.status === 'primary' ? 'default' : 'outline'}>
+                            <Badge variant={email.status === 'active' ? 'default' : 'outline'}>
                               {email.status}
                             </Badge>
                             <p>{email.email}</p>
@@ -150,7 +150,7 @@ export function ContactDetails({
                       <div className="mt-1 space-y-2">
                         {contact.phones.map((phone, index) => (
                           <div key={index} className="flex items-center gap-2">
-                            <Badge variant={phone.status === 'primary' ? 'default' : 'outline'}>
+                            <Badge variant={phone.status === 'active' ? 'default' : 'outline'}>
                               {phone.status}
                             </Badge>
                             <p>{phone.number}</p>
@@ -170,13 +170,13 @@ export function ContactDetails({
                         {contact.addresses.map((address, index) => (
                           <div key={index} className="border p-3 rounded-md">
                             <div className="flex items-center gap-2 mb-1">
-                              <Badge variant={address.status === 'primary' ? 'default' : 'outline'}>
+                              <Badge variant={address.status === 'active' ? 'default' : 'outline'}>
                                 {address.status}
                               </Badge>
                               <p className="font-medium">{address.type || 'Address'}</p>
                             </div>
-                            <p>{address.street}</p>
-                            {address.street2 && <p>{address.street2}</p>}
+                            <p>{address.street_address}</p>
+                            {address.secondary_street_address && <p>{address.secondary_street_address}</p>}
                             <p>
                               {address.city}
                               {address.state?.name ? `, ${address.state.name}` : ''}
@@ -197,7 +197,9 @@ export function ContactDetails({
                       <div className="mt-1 space-y-2">
                         {contact.social_media.map((account, index) => (
                           <div key={index} className="flex items-center gap-2">
-                            <Badge variant="outline">{account.service}</Badge>
+                            <Badge variant="outline">
+                              {account.service_type.charAt(0).toUpperCase() + account.service_type.slice(1)}
+                            </Badge>
                             <p>{account.username}</p>
                           </div>
                         ))}

@@ -1,6 +1,6 @@
 // app/hooks/contacts/useContactDetails.ts
 import { useState } from 'react';
-import { getClientSupabase } from '~/services/supabase';
+import { getSupabaseClient } from '~/services/auth.client';
 import { toast } from 'sonner';
 import { Contact } from '~/components/contacts/types';
 
@@ -51,7 +51,7 @@ export function useContactDetails({ onEdit }: UseContactDetailsOptions = {}) {
     
     try {
       setIsLoading(true);
-      const supabase = getClientSupabase();
+      const supabase = getSupabaseClient();
       
       if (!supabase) {
         throw new Error('Supabase client not initialized');
@@ -101,7 +101,7 @@ export function useContactDetails({ onEdit }: UseContactDetailsOptions = {}) {
     
     try {
       setIsLoading(true);
-      const supabase = getClientSupabase();
+      const supabase = getSupabaseClient();
       
       if (!supabase) {
         throw new Error('Supabase client not initialized');

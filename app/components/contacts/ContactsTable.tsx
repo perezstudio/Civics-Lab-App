@@ -215,7 +215,7 @@ export function ContactsTable({
                 }}>
                   <MultipleBadges 
                     items={contact.addresses} 
-                    getLabel={item => `${item.street}, ${item.city}`}
+                    getLabel={item => `${item.street_address}, ${item.city || ''}`}
                     limit={1}
                   />
                 </TableCell>
@@ -228,7 +228,7 @@ export function ContactsTable({
                 }}>
                   <MultipleBadges 
                     items={contact.social_media} 
-                    getLabel={item => `${item.service || 'Unknown'}: ${item.username || 'Unknown'}`}
+                    getLabel={item => `${item.service_type}: ${item.username || 'Unknown'}`}
                     limit={2}
                   />
                 </TableCell>
