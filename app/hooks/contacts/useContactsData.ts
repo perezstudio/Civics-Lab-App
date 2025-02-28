@@ -1,6 +1,6 @@
 // app/hooks/contacts/useContactsData.ts
-import { useState, useEffect, useCallback } from 'react';
-import { getClientSupabase } from '~/services/supabase';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { getSupabaseClient, isClientInitialized } from '~/services/auth.client';
 import { toast } from 'sonner';
 import { Contact, ContactView } from '~/components/contacts/types';
 
@@ -16,11 +16,31 @@ export function useContactsData({
   workspaceId, 
   initialContacts = [] 
 }: UseContactsDataOptions) {
+  // Mounted ref to prevent state updates after unmount
+  const isMounted = useRef(true);
+  
+  // State hooks
   const [contacts, setContacts] = useState<Contact[]>(initialContacts);
   const [filteredContacts, setFilteredContacts] = useState<Contact[]>(initialContacts);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+  
+  // Initialize with initialContacts
+  useEffect(() => {
+    if (initialContacts.length > 0) {
+      setContacts(initialContacts);
+      applyFilters(initialContacts);
+    }
+  }, [initialContacts]);
   
   // Fetch contacts whenever workspace changes
   useEffect(() => {
@@ -28,7 +48,7 @@ export function useContactsData({
       fetchContacts();
     }
   }, [workspaceId]);
-
+  
   // Get a contact by ID from the local state
   const getContactById = useCallback((id: string | null): Contact | null => {
     if (!id) return null;
@@ -37,13 +57,45 @@ export function useContactsData({
 
   // Selected contact based on ID
   const selectedContact = getContactById(selectedContactId);
-
-  // Fetch contacts from the database
-  const fetchContacts = async () => {
-    const supabase = getClientSupabase();
-    if (!supabase || !workspaceId) return;
-
-    setIsLoading(true);
+  
+  // Fetch contacts from the database with retries
+  const fetchContacts = useCallback(async () => {
+    // Reset errors
+    setError(null);
+    
+    if (!workspaceId) {
+      console.log('No workspace selected, skipping fetch');
+      return;
+    }
+    
+    // Check if Supabase client is initialized
+    if (!isClientInitialized()) {
+      const retryDelay = 500; // 500ms
+      console.log(`Supabase client not initialized, retrying in ${retryDelay}ms...`);
+      
+      // Wait and retry once
+      setTimeout(() => {
+        if (isClientInitialized() && isMounted.current) {
+          fetchContacts();
+        } else if (isMounted.current) {
+          setError('Supabase client not initialized');
+          console.warn('Supabase client still not initialized after retry');
+        }
+      }, retryDelay);
+      
+      return;
+    }
+    
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setError('Supabase client not initialized');
+      return;
+    }
+    
+    if (isMounted.current) {
+      setIsLoading(true);
+    }
+    
     try {
       // Fetch contacts with related data
       const { data: contactsData, error: contactsError } = await supabase
@@ -62,19 +114,31 @@ export function useContactsData({
 
       if (contactsError) {
         console.error('Error fetching contacts:', contactsError);
-        toast.error("Error loading contacts");
+        
+        if (isMounted.current) {
+          toast.error("Error loading contacts");
+          setError(`Error fetching contacts: ${contactsError.message}`);
+        }
         return;
       }
 
-      setContacts(contactsData || []);
-      applyFilters(contactsData || [], searchQuery);
+      if (isMounted.current) {
+        setContacts(contactsData || []);
+        applyFilters(contactsData || [], searchQuery);
+      }
     } catch (error) {
       console.error('Exception fetching contacts:', error);
-      toast.error("Error loading contacts");
+      
+      if (isMounted.current) {
+        toast.error("Error loading contacts");
+        setError(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
+      }
     } finally {
-      setIsLoading(false);
+      if (isMounted.current) {
+        setIsLoading(false);
+      }
     }
-  };
+  }, [workspaceId, searchQuery]);
 
   // Helper function to get nested values (for arrays like emails, phones, etc.)
   const getNestedValue = (obj: any, path: string): any => {
@@ -197,6 +261,7 @@ export function useContactsData({
     setSearchQuery,
     selectedContact,
     setSelectedContactId,
+    error,
     fetchContacts,
     applyFilters
   };

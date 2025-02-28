@@ -1,5 +1,4 @@
 // app/components/engage/sidebar.tsx
-import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "@remix-run/react";
 import {
   Sidebar,
@@ -32,7 +31,7 @@ import {
   Gauge
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
-import { getClientSupabase } from "~/services/supabase";
+import { signOut } from "~/services/auth.client";
 import { toast } from "sonner";
 
 interface Workspace {
@@ -43,44 +42,34 @@ interface Workspace {
 interface SidebarProps {
   user: any;
   workspaces: Workspace[];
+  selectedWorkspace: string | null;
+  onWorkspaceChange: (workspaceId: string) => void;
 }
 
-export function EngageSidebar({ user, workspaces }: SidebarProps) {
+export function EngageSidebar({ 
+  user, 
+  workspaces, 
+  selectedWorkspace, 
+  onWorkspaceChange 
+}: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const [selectedWorkspace, setSelectedWorkspace] = useState<string>("");
   
-  // Set initial workspace
-  useEffect(() => {
-    const stored = localStorage.getItem("selectedWorkspace");
-    if (stored && workspaces.find(w => w.id === stored)) {
-      setSelectedWorkspace(stored);
-    } else if (workspaces.length > 0) {
-      setSelectedWorkspace(workspaces[0].id);
-      localStorage.setItem("selectedWorkspace", workspaces[0].id);
-    }
-  }, [workspaces]);
-
   const handleWorkspaceChange = (value: string) => {
-    setSelectedWorkspace(value);
-    localStorage.setItem("selectedWorkspace", value);
+    onWorkspaceChange(value);
     
-    // Refresh current page to update data based on new workspace
+    // If we're already in engage, refresh the current page
+    // This forces child routes to re-render with the new workspace context
     if (location.pathname.includes('engage')) {
-      // Add url parameter for the new workspace
-      const url = new URL(window.location.href);
-      url.searchParams.set('workspace', value);
-      window.location.href = url.toString();
+      // Use the current pathname without adding any query parameters
+      window.location.href = location.pathname;
     }
   };
   
   const handleSignOut = async () => {
     try {
-      const supabase = getClientSupabase();
-      if (supabase) {
-        await supabase.auth.signOut();
-        navigate('/login');
-      }
+      await signOut();
+      navigate('/login');
     } catch (error) {
       console.error('Error signing out:', error);
       toast.error('Failed to sign out');
@@ -106,9 +95,14 @@ export function EngageSidebar({ user, workspaces }: SidebarProps) {
         <SidebarHeader>
           <SidebarMenu>
             <SidebarMenuItem>
-              <Select value={selectedWorkspace} onValueChange={handleWorkspaceChange}>
+              <Select 
+                value={selectedWorkspace || undefined} 
+                onValueChange={handleWorkspaceChange}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select workspace" />
+                  <SelectValue placeholder="Select workspace">
+                    {workspaces.find(w => w.id === selectedWorkspace)?.name || "Select workspace"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {workspaces.map((workspace) => (
@@ -131,12 +125,12 @@ export function EngageSidebar({ user, workspaces }: SidebarProps) {
                   const Icon = item.icon;
                   const isActive = location.pathname === item.href || 
                                   (item.href !== "/engage" && location.pathname.startsWith(item.href));
-                  const href = item.href + (selectedWorkspace ? `?workspace=${selectedWorkspace}` : '');
                   
+                  // Use links without query parameters
                   return (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton asChild isActive={isActive}>
-                        <Link to={href}>
+                        <Link to={item.href}>
                           <Icon className="h-4 w-4" />
                           <span>{item.label}</span>
                         </Link>
@@ -154,12 +148,11 @@ export function EngageSidebar({ user, workspaces }: SidebarProps) {
             {footerMenuItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname.includes(item.href);
-              const href = item.href + (selectedWorkspace ? `?workspace=${selectedWorkspace}` : '');
               
               return (
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton asChild isActive={isActive}>
-                    <Link to={href}>
+                    <Link to={item.href}>
                       <Icon className="h-4 w-4" />
                       <span>{item.label}</span>
                     </Link>
@@ -168,14 +161,27 @@ export function EngageSidebar({ user, workspaces }: SidebarProps) {
               );
             })}
             
-            {/* Sign out button */}
+            {/* User info and sign out button */}
             <SidebarMenuItem>
-              <SidebarMenuButton asChild onClick={handleSignOut}>
-                <Button variant="ghost" className="w-full justify-start">
-                  <LogOut className="h-4 w-4" />
+              <div className="px-3 py-2 mt-2 border-t border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="h-8 w-8 rounded-full bg-primary text-white flex items-center justify-center">
+                    {user?.email?.charAt(0)?.toUpperCase() || 'U'}
+                  </div>
+                  <div className="overflow-hidden">
+                    <p className="text-sm font-medium truncate">{user?.email}</p>
+                  </div>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="w-full justify-start"
+                  onClick={handleSignOut}
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
                   <span>Sign Out</span>
                 </Button>
-              </SidebarMenuButton>
+              </div>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarFooter>

@@ -3,12 +3,14 @@ import { createClient } from '@supabase/supabase-js';
 import { createCookieSessionStorage, redirect } from '@remix-run/node';
 import type { Session } from '@supabase/supabase-js';
 
+const isBrowser = typeof window !== 'undefined';
+
 // Environment validation
 if (!process.env.SUPABASE_URL) throw new Error('SUPABASE_URL is required');
 if (!process.env.SUPABASE_ANON_KEY) throw new Error('SUPABASE_ANON_KEY is required');
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+export const supabaseUrl = process.env.SUPABASE_URL;
+export const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
 // Session storage configuration
 export const sessionStorage = createCookieSessionStorage({
@@ -17,7 +19,7 @@ export const sessionStorage = createCookieSessionStorage({
     httpOnly: true,
     path: '/',
     sameSite: 'lax',
-    secrets: [process.env.SESSION_SECRET || 'secret'],
+    secrets: [process.env.SESSION_SECRET || 'replace-this-with-a-real-secret'],
     secure: process.env.NODE_ENV === 'production',
   },
 });
@@ -41,6 +43,8 @@ let clientSupabaseInstance: any = null;
  * Should be called from client components after hydration
  */
 export function initClientSupabase(token: string) {
+  if (!isBrowser) return null;
+  
   if (!clientSupabaseInstance) {
     clientSupabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
@@ -133,7 +137,6 @@ export class AuthService {
     email, 
     password 
   }: { 
-    request?: Request;
     email: string; 
     password: string;
   }) {
@@ -142,13 +145,22 @@ export class AuthService {
         email,
         password,
       });
-
+  
       if (error) {
         return { error: error.message };
       }
-
+  
       if (data?.session) {
-        const headers = await createServerSession(data.session);
+        // Create a proper session with the token
+        const session = await sessionStorage.getSession();
+        session.set('token', data.session.access_token);
+        session.set('refresh_token', data.session.refresh_token);
+        session.set('expires_at', data.session.expires_at);
+        
+        // Set the cookie headers
+        const headers = {
+          'Set-Cookie': await sessionStorage.commitSession(session)
+        };
         
         return { 
           success: true, 
@@ -159,7 +171,7 @@ export class AuthService {
     } catch (error: any) {
       return { error: 'Authentication failed: ' + error.message };
     }
-
+  
     return { error: 'An unexpected error occurred' };
   }
 

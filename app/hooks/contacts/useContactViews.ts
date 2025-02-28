@@ -1,6 +1,6 @@
 // app/hooks/contacts/useContactViews.ts
 import { useState, useEffect, useCallback } from 'react';
-import { getClientSupabase } from '~/services/supabase';
+import { getSupabaseClient, isClientInitialized } from '~/services/auth.client';
 import { toast } from 'sonner';
 import { 
   ContactView, 
@@ -29,6 +29,7 @@ export function useContactViews({
   const [views, setViews] = useState<ContactView[]>(initialViews);
   const [selectedView, setSelectedView] = useState<ContactView | null>(initialViews[0] || null);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   // UI control states
   const [isCreateViewOpen, setIsCreateViewOpen] = useState(false);
@@ -45,6 +46,16 @@ export function useContactViews({
     }
   }, [selectedView, onViewChange]);
 
+  // Set initial views if provided
+  useEffect(() => {
+    if (initialViews.length > 0) {
+      setViews(initialViews);
+      if (!selectedView && initialViews.length > 0) {
+        setSelectedView(initialViews[0]);
+      }
+    }
+  }, [initialViews]);
+  
   // Fetch views when workspace changes
   useEffect(() => {
     if (workspaceId) {
@@ -52,11 +63,37 @@ export function useContactViews({
     }
   }, [workspaceId]);
 
-  // Fetch views from the database
+  // Fetch views from the database with better error handling
   const fetchViews = async () => {
-    const supabase = getClientSupabase();
-    if (!supabase || !workspaceId) {
-      console.error('Supabase client not initialized or workspace not selected');
+    // Reset any previous errors
+    setError(null);
+    
+    if (!workspaceId) {
+      console.log('No workspace selected, skipping fetch');
+      return;
+    }
+    
+    // Check if Supabase client is initialized
+    if (!isClientInitialized()) {
+      const retryDelay = 500; // 500ms
+      console.log(`Supabase client not initialized, retrying in ${retryDelay}ms...`);
+      
+      // Wait and retry once
+      setTimeout(() => {
+        if (isClientInitialized()) {
+          fetchViews();
+        } else {
+          setError('Supabase client not initialized');
+          console.warn('Supabase client still not initialized after retry');
+        }
+      }, retryDelay);
+      
+      return;
+    }
+    
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setError('Supabase client not initialized or workspace not selected');
       return;
     }
     
@@ -70,6 +107,7 @@ export function useContactViews({
       if (error) {
         console.error("Error fetching views:", error);
         toast.error("Error loading views");
+        setError(`Error fetching views: ${error.message}`);
         return;
       }
       
@@ -79,19 +117,24 @@ export function useContactViews({
           setSelectedView(data[0]);
         }
       }
-      
-      setIsLoading(false);
     } catch (error) {
       console.error("Error in fetchViews:", error);
       toast.error("Error loading views");
+      setError(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
       setIsLoading(false);
     }
   };
 
   // Update view field visibility
   const updateViewField = async (field: keyof ContactView, value: boolean) => {
-    const supabase = getClientSupabase();
-    if (!supabase || !selectedView) return;
+    if (!selectedView) return;
+    
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      toast.error("Cannot update view: Client not initialized");
+      return;
+    }
 
     try {
       const { error } = await supabase
@@ -115,7 +158,7 @@ export function useContactViews({
       await fetchViews();
       
       toast.success("View updated");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Unexpected error updating view:", error);
       toast.error("Error updating view");
     }
@@ -123,9 +166,14 @@ export function useContactViews({
 
   // Create a new view
   const createView = async (viewName: string) => {
-    const supabase = getClientSupabase();
-    if (!supabase || !workspaceId || !viewName.trim() || !userId) {
-      return;
+    if (!viewName.trim() || !workspaceId || !userId) {
+      return null;
+    }
+    
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      toast.error("Cannot create view: Client not initialized");
+      return null;
     }
 
     try {
@@ -158,7 +206,7 @@ export function useContactViews({
       if (insertError) {
         console.error("Error creating view:", insertError);
         toast.error("Error creating view");
-        return;
+        return null;
       }
 
       await fetchViews();
@@ -171,8 +219,8 @@ export function useContactViews({
       }
       
       toast.success("View created successfully");
-      return insertedView?.[0];
-    } catch (error) {
+      return insertedView?.[0] || null;
+    } catch (error: any) {
       console.error("Unexpected error creating view:", error);
       toast.error("Error creating view");
       return null;
@@ -181,8 +229,13 @@ export function useContactViews({
   
   // Edit an existing view
   const editView = async (viewName: string) => {
-    const supabase = getClientSupabase();
-    if (!supabase || !selectedView || !viewName.trim()) return;
+    if (!selectedView || !viewName.trim()) return;
+    
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      toast.error("Cannot update view: Client not initialized");
+      return;
+    }
   
     try {
       const updateData = { 
@@ -215,7 +268,7 @@ export function useContactViews({
       setEditViewName('');
       setIsEditViewOpen(false);
       toast.success("View updated successfully");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Unexpected error updating view:", error);
       toast.error("Error updating view");
     }
@@ -223,8 +276,13 @@ export function useContactViews({
   
   // Delete a view
   const deleteView = async () => {
-    const supabase = getClientSupabase();
-    if (!supabase || !selectedView) return;
+    if (!selectedView) return;
+    
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      toast.error("Cannot delete view: Client not initialized");
+      return;
+    }
   
     try {
       const { error } = await supabase
@@ -250,7 +308,7 @@ export function useContactViews({
       
       setIsDeleteViewOpen(false);
       toast.success("View deleted successfully");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Unexpected error deleting view:", error);
       toast.error("Error deleting view");
     }
@@ -258,8 +316,11 @@ export function useContactViews({
   
   // Update view in database
   const updateViewInDatabase = async (view: ContactView) => {
-    const supabase = getClientSupabase();
-    if (!supabase) return;
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      toast.error("Cannot update view: Client not initialized");
+      return false;
+    }
     
     try {
       const updateData = {
@@ -291,7 +352,7 @@ export function useContactViews({
       }
       
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Unexpected error updating view:", error);
       toast.error("Error updating view settings");
       return false;
@@ -303,6 +364,7 @@ export function useContactViews({
     selectedView,
     setSelectedView,
     isLoading,
+    error,
     fetchViews,
     
     // View CRUD

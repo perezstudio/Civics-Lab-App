@@ -1,44 +1,75 @@
-// app/routes/login.tsx
-import { json, redirect, ActionFunctionArgs } from "@remix-run/node";
-import { Form, useActionData, useNavigation } from "@remix-run/react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
-import { Button } from "~/components/ui/button";
-import { Alert, AlertDescription } from "~/components/ui/alert";
-import { AuthService } from "~/services/supabase";
+import { json, redirect, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node"
+import { Form, useActionData, useNavigation, useSearchParams } from "@remix-run/react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card"
+import { Input } from "~/components/ui/input"
+import { Button } from "~/components/ui/button"
+import { Alert, AlertDescription } from "~/components/ui/alert"
+import { createSupabaseServerClient } from "~/services/supabase.server"
+
+// Check if user is already logged in and redirect if they are
+export async function loader({ request }: LoaderFunctionArgs) {
+  try {
+    const { supabase, headers } = createSupabaseServerClient(request)
+    
+    // Use getUser instead of getSession to avoid security warnings
+    const { data, error } = await supabase.auth.getUser()
+    
+    // If user is already logged in, redirect to app
+    if (!error && data.user) {
+      return redirect('/app', { headers })
+    }
+    
+    return json({}, { headers })
+  } catch (error) {
+    console.error('Login loader error:', error)
+    return json({})
+  }
+}
 
 export async function action({ request }: ActionFunctionArgs) {
-  const formData = await request.formData();
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
+  const formData = await request.formData()
+  const email = formData.get("email") as string
+  const password = formData.get("password") as string
 
   if (!email || !password) {
-    return json({ error: "Email and password are required" });
+    return json({ error: "Email and password are required" })
   }
 
-  const { error, success, headers, user } = await AuthService.signIn({
-    email,
-    password,
-  });
+  try {
+    const { supabase, headers } = createSupabaseServerClient(request)
+    
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    })
 
-  if (error) {
-    return json({ error });
+    if (error) {
+      return json({ error: error.message }, { headers })
+    }
+
+    if (data?.user) {
+      // Successfully signed in, redirect to app
+      return redirect("/app", { headers })
+    }
+
+    return json({ error: "An unexpected error occurred" }, { headers })
+  } catch (error) {
+    return json({ 
+      error: error instanceof Error ? error.message : "An unexpected error occurred" 
+    })
   }
-
-  if (success && headers) {
-    // Redirect to the app route after successful login
-    return redirect("/app", {
-      headers,
-    });
-  }
-
-  return json({ error: "An unexpected error occurred" });
 }
 
 export default function LoginPage() {
-  const actionData = useActionData<typeof action>();
-  const navigation = useNavigation();
-  const isSubmitting = navigation.state === "submitting";
+  const actionData = useActionData<typeof action>()
+  const navigation = useNavigation()
+  const [searchParams] = useSearchParams()
+  const isSubmitting = navigation.state === "submitting"
+  
+  // Get error messages from URL params or action data
+  const urlError = searchParams.get('error')
+  const errorMessage = actionData?.error || 
+    (urlError === 'confirmation_failed' ? 'Email confirmation failed. Please try again.' : '')
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -49,9 +80,9 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent>
           <Form method="post" className="space-y-4">
-            {actionData?.error && (
+            {errorMessage && (
               <Alert variant="destructive">
-                <AlertDescription>{actionData.error}</AlertDescription>
+                <AlertDescription>{errorMessage}</AlertDescription>
               </Alert>
             )}
             
@@ -86,5 +117,5 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </div>
-  );
+  )
 }

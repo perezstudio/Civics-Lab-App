@@ -1,52 +1,87 @@
 // app/routes/_auth.engage.tsx
-import { json, LoaderFunctionArgs } from "@remix-run/node";
-import { Outlet, useLoaderData } from "@remix-run/react";
-import { EngageSidebar } from "~/components/engage/sidebar";
-import { AuthService, DataService } from "~/services/supabase";
+import { json, type LoaderFunctionArgs } from "@remix-run/node"
+import { Outlet, useLoaderData, useOutletContext } from "@remix-run/react"
+import { useState, useEffect } from "react"
+import { EngageSidebar } from "~/components/engage/sidebar"
+import { createSupabaseServerClient } from "~/services/supabase.server"
+
+// Type for auth context from parent layout
+type AuthContext = { user: any }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Get the user directly from AuthService
-  const user = await AuthService.requireAuth(request);
-  
-  const { data: workspaces, error } = await DataService.fetchData({
-    table: 'workspaces',
-    query: { created_by: user.id },
-    request
-  });
-
-  if (error) {
-    return json({ 
-      user,  // Include user in the loader data
-      workspaces: [],
-      error: `Failed to load workspaces: ${error}` 
-    });
+  try {
+    const { supabase, headers } = createSupabaseServerClient(request)
+    
+    // Get current user using getUser method instead of session
+    const { data: userData, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !userData.user) {
+      throw new Error('User not authenticated')
+    }
+    
+    // Fetch workspaces for the user
+    const { data: workspaces, error: workspacesError } = await supabase
+      .from('workspaces')
+      .select('*')
+      .eq('created_by', userData.user.id)
+    
+    if (workspacesError) {
+      console.error('Error fetching workspaces:', workspacesError)
+      return json({ workspaces: [] }, { headers })
+    }
+    
+    return json(
+      { workspaces: workspaces || [] }, 
+      { headers }
+    )
+  } catch (error) {
+    console.error('Error in engage loader:', error)
+    return json({ workspaces: [] })
   }
-
-  return json({ 
-    user,    // Include user in the loader data
-    workspaces: workspaces || [],
-    error: null
-  });
 }
 
 export default function EngageRoute() {
-  // Get data from this route's loader
-  const { user, workspaces, error } = useLoaderData<typeof loader>();
+  // Get user from outlet context (provided by _auth.tsx)
+  const { user } = useOutletContext<AuthContext>()
+  
+  // Get workspaces from loader data
+  const { workspaces } = useLoaderData<typeof loader>()
+  
+  // State for selected workspace
+  const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null)
+  
+  // Initialize selected workspace from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedWorkspace = localStorage.getItem('selectedWorkspace')
+      
+      if (storedWorkspace && workspaces.some(w => w.id === storedWorkspace)) {
+        setSelectedWorkspace(storedWorkspace)
+      } else if (workspaces.length > 0) {
+        // Default to first workspace if none selected
+        setSelectedWorkspace(workspaces[0].id)
+        localStorage.setItem('selectedWorkspace', workspaces[0].id)
+      }
+    }
+  }, [workspaces])
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-red-500">{error}</div>
-      </div>
-    );
+  // Handle workspace change
+  const handleWorkspaceChange = (workspaceId: string) => {
+    setSelectedWorkspace(workspaceId)
+    localStorage.setItem('selectedWorkspace', workspaceId)
   }
 
   return (
     <div className="flex h-screen">
-      <EngageSidebar user={user} workspaces={workspaces} />
+      <EngageSidebar 
+        user={user} 
+        workspaces={workspaces}
+        selectedWorkspace={selectedWorkspace}
+        onWorkspaceChange={handleWorkspaceChange}
+      />
       <div className="flex-1 overflow-hidden bg-white">
-        <Outlet />
+        <Outlet context={{ user, workspaces, selectedWorkspace }} />
       </div>
     </div>
-  );
+  )
 }
