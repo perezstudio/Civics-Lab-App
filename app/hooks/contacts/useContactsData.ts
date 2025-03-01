@@ -26,6 +26,7 @@ export function useContactsData({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   
   // Cleanup on unmount
   useEffect(() => {
@@ -38,16 +39,9 @@ export function useContactsData({
   useEffect(() => {
     if (initialContacts.length > 0) {
       setContacts(initialContacts);
-      applyFilters(initialContacts);
+      setFilteredContacts(initialContacts);
     }
   }, [initialContacts]);
-  
-  // Fetch contacts whenever workspace changes
-  useEffect(() => {
-    if (workspaceId) {
-      fetchContacts();
-    }
-  }, [workspaceId]);
   
   // Get a contact by ID from the local state
   const getContactById = useCallback((id: string | null): Contact | null => {
@@ -58,90 +52,8 @@ export function useContactsData({
   // Selected contact based on ID
   const selectedContact = getContactById(selectedContactId);
   
-  // Fetch contacts from the database with retries
-  const fetchContacts = useCallback(async () => {
-    // Reset errors
-    setError(null);
-    
-    if (!workspaceId) {
-      console.log('No workspace selected, skipping fetch');
-      return;
-    }
-    
-    // Check if Supabase client is initialized
-    if (!isClientInitialized()) {
-      const retryDelay = 500; // 500ms
-      console.log(`Supabase client not initialized, retrying in ${retryDelay}ms...`);
-      
-      // Wait and retry once
-      setTimeout(() => {
-        if (isClientInitialized() && isMounted.current) {
-          fetchContacts();
-        } else if (isMounted.current) {
-          setError('Supabase client not initialized');
-          console.warn('Supabase client still not initialized after retry');
-        }
-      }, retryDelay);
-      
-      return;
-    }
-    
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      setError('Supabase client not initialized');
-      return;
-    }
-    
-    if (isMounted.current) {
-      setIsLoading(true);
-    }
-    
-    try {
-      // Fetch contacts with related data
-      const { data: contactsData, error: contactsError } = await supabase
-        .from('contacts')
-        .select(`
-          *,
-          race:race_id(id, race),
-          gender:gender_id(id, gender),
-          emails:contact_emails(*),
-          phones:contact_phones(*),
-          addresses:contact_addresses(*),
-          social_media:contact_social_media_accounts(*)
-        `)
-        .eq('workspace_id', workspaceId)
-        .order('created_at', { ascending: false });
-
-      if (contactsError) {
-        console.error('Error fetching contacts:', contactsError);
-        
-        if (isMounted.current) {
-          toast.error("Error loading contacts");
-          setError(`Error fetching contacts: ${contactsError.message}`);
-        }
-        return;
-      }
-
-      if (isMounted.current) {
-        setContacts(contactsData || []);
-        applyFilters(contactsData || [], searchQuery);
-      }
-    } catch (error) {
-      console.error('Exception fetching contacts:', error);
-      
-      if (isMounted.current) {
-        toast.error("Error loading contacts");
-        setError(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    } finally {
-      if (isMounted.current) {
-        setIsLoading(false);
-      }
-    }
-  }, [workspaceId, searchQuery]);
-
   // Helper function to get nested values (for arrays like emails, phones, etc.)
-  const getNestedValue = (obj: any, path: string): any => {
+  const getNestedValue = useCallback((obj: any, path: string): any => {
     if (!path) return undefined;
     if (!obj) return '';
     
@@ -162,7 +74,7 @@ export function useContactsData({
     
     // For regular fields
     return obj[path] || '';
-  };
+  }, []);
 
   // Apply filters and sorting to contacts
   const applyFilters = useCallback((
@@ -246,12 +158,102 @@ export function useContactsData({
     }
     
     setFilteredContacts(filtered);
-  }, [contacts, searchQuery]);
+  }, [contacts, searchQuery, getNestedValue]);
 
   // Update filters when search query changes
   useEffect(() => {
     applyFilters();
   }, [searchQuery, applyFilters]);
+
+  // Fetch contacts from the database with better error handling
+  const fetchContacts = useCallback(async () => {
+    // Reset errors
+    setError(null);
+    
+    if (!workspaceId) {
+      console.log('No workspace selected, skipping fetch');
+      return;
+    }
+    
+    // Check if Supabase client is initialized
+    if (!isClientInitialized()) {
+      // If we've already tried multiple times, just set an error
+      if (retryCount >= 3) {
+        if (isMounted.current) {
+          setError('Supabase client not initialized after multiple attempts');
+        }
+        return;
+      }
+      
+      // Wait and retry
+      const retryDelay = 500; // 500ms
+      console.log(`Supabase client not initialized, retrying in ${retryDelay}ms...`);
+      
+      setTimeout(() => {
+        if (isMounted.current) {
+          setRetryCount(prev => prev + 1);
+          fetchContacts();
+        }
+      }, retryDelay);
+      
+      return;
+    }
+    
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      if (isMounted.current) {
+        setError('Supabase client not initialized');
+      }
+      return;
+    }
+    
+    if (isMounted.current) {
+      setIsLoading(true);
+    }
+    
+    try {
+      // Fetch contacts with related data
+      const { data: contactsData, error: contactsError } = await supabase
+        .from('contacts')
+        .select(`
+          *,
+          race:race_id(id, race),
+          gender:gender_id(id, gender),
+          emails:contact_emails(*),
+          phones:contact_phones(*),
+          addresses:contact_addresses(*),
+          social_media:contact_social_media_accounts(*)
+        `)
+        .eq('workspace_id', workspaceId)
+        .order('created_at', { ascending: false });
+
+      if (contactsError) {
+        console.error('Error fetching contacts:', contactsError);
+        
+        if (isMounted.current) {
+          toast.error("Error loading contacts");
+          setError(`Error fetching contacts: ${contactsError.message}`);
+        }
+        return;
+      }
+
+      if (isMounted.current) {
+        setContacts(contactsData || []);
+        applyFilters(contactsData || [], searchQuery);
+      }
+    } catch (error) {
+      console.error('Exception fetching contacts:', error);
+      
+      if (isMounted.current) {
+        toast.error("Error loading contacts");
+        setError(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    } finally {
+      if (isMounted.current) {
+        setIsLoading(false);
+      }
+    }
+  }, [workspaceId, searchQuery, applyFilters, retryCount]);
   
   return {
     contacts,

@@ -1,6 +1,6 @@
 // app/components/contacts/ContactsPage.tsx
 import { Users, UserPlus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { ContactViewSelector } from './ContactViewSelector';
@@ -21,17 +21,24 @@ interface ContactsPageProps {
   userId: string;
   workspaceId: string | null;
   initialLoading?: boolean;
+  initialViews?: any[];
+  initialContacts?: any[];
 }
 
 export function ContactsPage({
   userId,
   workspaceId,
-  initialLoading = false
+  initialLoading = false,
+  initialViews = [],
+  initialContacts = []
 }: ContactsPageProps) {
   // State for filter/sort UI controls
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isSortingOpen, setIsSortingOpen] = useState(false);
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
+  
+  // Debug loading
+  const [isComponentMounted, setIsComponentMounted] = useState(false);
   
   // Initialize columns resizing hook
   const { 
@@ -54,20 +61,6 @@ export function ContactsPage({
     actions: 100
   });
   
-  // Initialize contacts data hook
-  const {
-    contacts,
-    filteredContacts,
-    searchQuery,
-    setSearchQuery,
-    isLoading: contactsLoading,
-    fetchContacts,
-    applyFilters
-  } = useContactsData({
-    workspaceId,
-    initialContacts: []
-  });
-  
   // Initialize views management hook
   const {
     views,
@@ -83,11 +76,27 @@ export function ContactsPage({
   } = useContactViews({
     workspaceId,
     userId,
-    initialViews: [],
+    initialViews: initialViews,
     onViewChange: (view) => {
       // When view changes, re-apply filters
-      applyFilters();
+      if (view) {
+        applyFilters(undefined, undefined, view);
+      }
     }
+  });
+  
+  // Initialize contacts data hook
+  const {
+    contacts,
+    filteredContacts,
+    searchQuery,
+    setSearchQuery,
+    isLoading: contactsLoading,
+    fetchContacts,
+    applyFilters
+  } = useContactsData({
+    workspaceId,
+    initialContacts
   });
   
   // Initialize contact details hook
@@ -167,54 +176,69 @@ export function ContactsPage({
     }
   });
   
-  // Effect to refresh data when workspace changes
+  // Effect to mark component as mounted for debugging
   useEffect(() => {
-    if (!workspaceId) return;
-    
-    fetchViews();
-    fetchContacts();
-  }, [workspaceId]);
+    setIsComponentMounted(true);
+  }, []);
   
-  // When a view is selected, refresh contacts
-  useEffect(() => {
-    if (selectedView) {
-      fetchContacts();
-    }
-  }, [selectedView]);
+  // Effect to refresh data when workspace changes
+  // Update the data loading effects in ContactsPage
+useEffect(() => {
+  if (!workspaceId) {
+    console.log('No workspace ID provided to ContactsPage');
+    return;
+  }
+  
+  console.log('ContactsPage: Loading data for workspace', workspaceId);
+  console.log('Initial views:', initialViews.length, initialViews);
+  console.log('Initial contacts:', initialContacts.length, initialContacts);
+  
+  // If initial data is already provided, use it
+  if (initialViews.length > 0) {
+    fetchViews();
+  }
+  
+  if (initialContacts.length > 0) {
+    // If we have initial contacts, we don't need to fetch them again
+    console.log('Using initial contacts');
+  } else {
+    // Only fetch contacts if we don't have initial data
+    fetchContacts();
+  }
+}, [workspaceId, initialViews.length, initialContacts.length, fetchViews, fetchContacts]);
   
   // Handlers
-  const handleCreateContact = () => {
+  const handleCreateContact = useCallback(() => {
     setIsFormOpen(true);
-  };
+  }, [setIsFormOpen]);
   
-  const handleViewContact = (contact) => {
+  const handleViewContact = useCallback((contact) => {
     openDetails(contact);
-  };
+  }, [openDetails]);
   
-  const handleDeleteContact = async (contactId) => {
+  const handleDeleteContact = useCallback(async (contactId) => {
     await deleteContact(contactId);
     fetchContacts();
-  };
+  }, [deleteContact, fetchContacts]);
   
-  const handleCreateView = async (name) => {
+  const handleCreateView = useCallback(async (name) => {
     await createView(name);
-    fetchViews();
-  };
+  }, [createView]);
   
-  const handleUpdateViewField = async (field, value) => {
+  const handleUpdateViewField = useCallback(async (field, value) => {
     await updateViewField(field, value);
-  };
+  }, [updateViewField]);
   
-  const handleEditView = async (name) => {
+  const handleEditView = useCallback(async (name) => {
     await editView(name);
-  };
+  }, [editView]);
   
-  const handleDeleteView = async () => {
+  const handleDeleteView = useCallback(async () => {
     await deleteView();
-  };
+  }, [deleteView]);
   
   // Determine loading state
-  const isLoading = initialLoading || contactsLoading || viewsLoading;
+  const isLoading = initialLoading || contactsLoading || viewsLoading || !isComponentMounted;
   
   return (
     <div className="h-screen overflow-auto">

@@ -1,26 +1,27 @@
 // app/components/contacts/ContactViewSettings.tsx
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { Cog, Edit, Trash2 } from 'lucide-react';
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu";
-import { 
-  AlertDialog, 
-  AlertDialogAction, 
-  AlertDialogCancel, 
-  AlertDialogContent, 
-  AlertDialogDescription, 
-  AlertDialogFooter, 
-  AlertDialogHeader, 
-  AlertDialogTitle 
-} from "~/components/ui/alert-dialog";
 import { Input } from "~/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "~/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
 import {
   Sheet,
   SheetContent,
@@ -48,17 +49,19 @@ export function ContactViewSettings({
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isEditViewOpen, setIsEditViewOpen] = useState(false);
   const [isDeleteViewOpen, setIsDeleteViewOpen] = useState(false);
+  const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
   const [editViewName, setEditViewName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  const handleOpenEditView = useCallback(() => {
+  const handleOpenEditView = () => {
     if (selectedView) {
       setEditViewName(selectedView.view_name);
       setIsEditViewOpen(true);
+      setIsSettingsMenuOpen(false);
     }
-  }, [selectedView]);
+  };
   
-  const handleEditView = useCallback(async () => {
+  const handleEditView = async () => {
     if (!editViewName.trim() || isSubmitting) return;
     
     try {
@@ -72,9 +75,9 @@ export function ContactViewSettings({
     } finally {
       setIsSubmitting(false);
     }
-  }, [editViewName, isSubmitting, onEditView]);
+  };
   
-  const handleDeleteView = useCallback(async () => {
+  const handleDeleteView = async () => {
     if (isSubmitting) return;
     
     try {
@@ -82,42 +85,67 @@ export function ContactViewSettings({
       await onDeleteView();
       setIsDeleteViewOpen(false);
       setIsSheetOpen(false);
+      setIsSettingsMenuOpen(false);
     } catch (error) {
       console.error("Error deleting view:", error);
     } finally {
       setIsSubmitting(false);
     }
-  }, [isSubmitting, onDeleteView]);
+  };
+
+  const openSheet = () => {
+    setIsSettingsMenuOpen(false);
+    setIsSheetOpen(true);
+  };
   
   if (!selectedView) return null;
   
   return (
     <>
-      {/* Use a dropdown menu for quick actions */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="icon">
-            <Cog className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setIsSheetOpen(true)}>
-            View Settings
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleOpenEditView}>
-            <Edit className="mr-2 h-4 w-4" />
-            Edit View
-          </DropdownMenuItem>
-          <DropdownMenuItem 
-            className="text-destructive focus:text-destructive"
-            onClick={() => setIsDeleteViewOpen(true)}
+      {/* Simple custom dropdown instead of Radix UI DropdownMenu */}
+      <div className="relative">
+        <Button 
+          variant="outline" 
+          size="icon"
+          onClick={() => setIsSettingsMenuOpen(!isSettingsMenuOpen)}
+        >
+          <Cog className="h-4 w-4" />
+        </Button>
+        
+        {isSettingsMenuOpen && (
+          <div 
+            className="absolute right-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
           >
-            <Trash2 className="mr-2 h-4 w-4" />
-            Delete View
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <div 
+              className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground hover:bg-accent hover:text-accent-foreground"
+              onClick={openSheet}
+            >
+              View Settings
+            </div>
+            
+            <div className="h-px mx-1 my-1 bg-muted" />
+            
+            <div 
+              className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground hover:bg-accent hover:text-accent-foreground"
+              onClick={handleOpenEditView}
+            >
+              <Edit className="mr-2 h-4 w-4" />
+              Edit View
+            </div>
+            
+            <div 
+              className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground hover:bg-destructive hover:text-destructive-foreground text-destructive"
+              onClick={() => {
+                setIsSettingsMenuOpen(false);
+                setIsDeleteViewOpen(true);
+              }}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete View
+            </div>
+          </div>
+        )}
+      </div>
       
       {/* Use a Sheet for the view settings UI */}
       <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
@@ -170,14 +198,14 @@ export function ContactViewSettings({
       </Sheet>
       
       {/* Edit View Dialog */}
-      <AlertDialog open={isEditViewOpen} onOpenChange={setIsEditViewOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Edit View</AlertDialogTitle>
-            <AlertDialogDescription>
+      <Dialog open={isEditViewOpen} onOpenChange={setIsEditViewOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit View</DialogTitle>
+            <DialogDescription>
               Update the name of your current view.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+            </DialogDescription>
+          </DialogHeader>
           <div className="py-4">
             <Input
               placeholder="View name"
@@ -186,8 +214,9 @@ export function ContactViewSettings({
               className="w-full"
             />
           </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel 
+          <DialogFooter>
+            <Button 
+              variant="outline"
               onClick={() => {
                 setEditViewName('');
                 setIsEditViewOpen(false);
@@ -195,18 +224,16 @@ export function ContactViewSettings({
               disabled={isSubmitting}
             >
               Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction asChild>
-              <Button 
-                onClick={handleEditView}
-                disabled={!editViewName.trim() || isSubmitting}
-              >
-                {isSubmitting ? "Saving..." : "Save Changes"}
-              </Button>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+            <Button 
+              onClick={handleEditView}
+              disabled={!editViewName.trim() || isSubmitting}
+            >
+              {isSubmitting ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       
       {/* Delete View Dialog */}
       <AlertDialog open={isDeleteViewOpen} onOpenChange={setIsDeleteViewOpen}>

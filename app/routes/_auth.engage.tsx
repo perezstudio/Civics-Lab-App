@@ -51,19 +51,31 @@ export default function EngageRoute() {
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null)
   
   // Initialize selected workspace from localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const storedWorkspace = localStorage.getItem('selectedWorkspace')
+  // Ensure the selectedWorkspace is properly initialized from localStorage
+useEffect(() => {
+  if (typeof window !== 'undefined' && workspaces.length > 0) {
+    try {
+      let storedWorkspace = localStorage.getItem('selectedWorkspace');
       
-      if (storedWorkspace && workspaces.some(w => w.id === storedWorkspace)) {
-        setSelectedWorkspace(storedWorkspace)
-      } else if (workspaces.length > 0) {
-        // Default to first workspace if none selected
-        setSelectedWorkspace(workspaces[0].id)
-        localStorage.setItem('selectedWorkspace', workspaces[0].id)
+      console.log('Retrieved workspace from localStorage:', storedWorkspace);
+      
+      // If the stored ID is not in the list of available workspaces, use the first one
+      if (!storedWorkspace || !workspaces.some(w => w.id === storedWorkspace)) {
+        storedWorkspace = workspaces[0].id;
+        localStorage.setItem('selectedWorkspace', storedWorkspace);
+        console.log('Set default workspace to:', storedWorkspace);
+      }
+      
+      setSelectedWorkspace(storedWorkspace);
+    } catch (error) {
+      console.error('Error accessing localStorage:', error);
+      // Fallback to first workspace
+      if (workspaces.length > 0) {
+        setSelectedWorkspace(workspaces[0].id);
       }
     }
-  }, [workspaces])
+  }
+}, [workspaces]);
 
   // Handle workspace change
   const handleWorkspaceChange = (workspaceId: string) => {

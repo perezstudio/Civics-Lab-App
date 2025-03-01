@@ -8,37 +8,35 @@ let supabaseClient: ReturnType<typeof createBrowserClient<Database>> | null = nu
 let initializationAttempted = false
 
 // Initialize the Supabase client (called from root layout)
+// In auth.client.ts
 export const initSupabaseClient = (
-  supabaseUrl: string,
+  supabaseUrl: string, 
   supabaseAnonKey: string
 ) => {
-  // Only attempt initialization if we haven't already tried or client is null
-  if (!initializationAttempted || !supabaseClient) {
-    initializationAttempted = true
-    
-    if (supabaseUrl && supabaseAnonKey) {
-      try {
-        // Create the client only if we have valid credentials
-        supabaseClient = createBrowserClient<Database>(supabaseUrl, supabaseAnonKey, {
-          auth: {
-            persistSession: true,
-            storageKey: 'sb-auth-token',
-            autoRefreshToken: true,
-            detectSessionInUrl: true
-          }
-        })
-        console.log('Supabase client initialized successfully')
-      } catch (error) {
-        console.error('Failed to initialize Supabase client:', error)
-        supabaseClient = null
-      }
-    } else {
-      console.warn('Unable to initialize Supabase client: missing URL or anon key')
-    }
+  console.log('Attempting to initialize Supabase client with:', 
+    supabaseUrl ? 'Valid URL' : 'Missing URL',
+    supabaseAnonKey ? 'Valid Key' : 'Missing Key'
+  );
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('Cannot initialize Supabase: missing credentials');
+    return null;
   }
-  
-  return supabaseClient
-}
+
+  try {
+    supabaseClient = createBrowserClient<Database>(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        storageKey: 'sb-auth-token',
+      }
+    });
+    console.log('Supabase client initialized successfully');
+    return supabaseClient;
+  } catch (error) {
+    console.error('Failed to initialize Supabase client:', error);
+    return null;
+  }
+};
 
 // Get the Supabase client (with auto-initialization)
 export const getSupabaseClient = () => {

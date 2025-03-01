@@ -55,16 +55,9 @@ export function useContactViews({
       }
     }
   }, [initialViews]);
-  
-  // Fetch views when workspace changes
-  useEffect(() => {
-    if (workspaceId) {
-      fetchViews();
-    }
-  }, [workspaceId]);
 
-  // Fetch views from the database with better error handling
-  const fetchViews = async () => {
+  // We need a stable reference for fetchViews
+  const fetchViews = useCallback(async () => {
     // Reset any previous errors
     setError(null);
     
@@ -113,6 +106,7 @@ export function useContactViews({
       
       if (data) {
         setViews(data);
+        // Only set selectedView if none is currently selected and data exists
         if (!selectedView && data.length > 0) {
           setSelectedView(data[0]);
         }
@@ -124,10 +118,10 @@ export function useContactViews({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [workspaceId, selectedView]);
 
-  // Update view field visibility
-  const updateViewField = async (field: keyof ContactView, value: boolean) => {
+  // Update view field visibility 
+  const updateViewField = useCallback(async (field: keyof ContactView, value: boolean) => {
     if (!selectedView) return;
     
     const supabase = getSupabaseClient();
@@ -149,9 +143,12 @@ export function useContactViews({
       }
 
       // Update local state
-      setSelectedView({
-        ...selectedView,
-        [field]: value
+      setSelectedView(prevView => {
+        if (!prevView) return null;
+        return {
+          ...prevView,
+          [field]: value
+        };
       });
 
       // Refresh views from server
@@ -162,10 +159,10 @@ export function useContactViews({
       console.error("Unexpected error updating view:", error);
       toast.error("Error updating view");
     }
-  };
+  }, [selectedView, fetchViews]);
 
   // Create a new view
-  const createView = async (viewName: string) => {
+  const createView = useCallback(async (viewName: string) => {
     if (!viewName.trim() || !workspaceId || !userId) {
       return null;
     }
@@ -225,10 +222,10 @@ export function useContactViews({
       toast.error("Error creating view");
       return null;
     }
-  };
+  }, [workspaceId, userId, views.length, fetchViews]);
   
   // Edit an existing view
-  const editView = async (viewName: string) => {
+  const editView = useCallback(async (viewName: string) => {
     if (!selectedView || !viewName.trim()) return;
     
     const supabase = getSupabaseClient();
@@ -257,12 +254,18 @@ export function useContactViews({
       }
   
       // Update local state
-      setSelectedView({ ...selectedView, view_name: viewName.trim() });
-      setViews(views.map(view => 
-        view.id === selectedView.id 
-          ? { ...view, view_name: viewName.trim() }
-          : view
-      ));
+      setSelectedView(prevView => {
+        if (!prevView) return null;
+        return { ...prevView, view_name: viewName.trim() };
+      });
+      
+      setViews(prevViews => 
+        prevViews.map(view => 
+          view.id === selectedView.id 
+            ? { ...view, view_name: viewName.trim() }
+            : view
+        )
+      );
   
       await fetchViews();
       setEditViewName('');
@@ -272,10 +275,10 @@ export function useContactViews({
       console.error("Unexpected error updating view:", error);
       toast.error("Error updating view");
     }
-  };
+  }, [selectedView, userId, fetchViews]);
   
   // Delete a view
-  const deleteView = async () => {
+  const deleteView = useCallback(async () => {
     if (!selectedView) return;
     
     const supabase = getSupabaseClient();
@@ -295,16 +298,15 @@ export function useContactViews({
         toast.error("Error deleting view");
         return;
       }
-  
-      await fetchViews();
       
-      // Set the first view as selected after deletion
-      if (views.length > 1) {
-        const nextView = views.find(view => view.id !== selectedView.id);
-        setSelectedView(nextView || null);
-      } else {
-        setSelectedView(null);
-      }
+      const currentViewId = selectedView.id;
+      
+      // Find next view to select
+      const nextView = views.find(view => view.id !== currentViewId);
+      setSelectedView(nextView || null);
+      
+      // Update views list
+      setViews(prevViews => prevViews.filter(view => view.id !== currentViewId));
       
       setIsDeleteViewOpen(false);
       toast.success("View deleted successfully");
@@ -312,10 +314,10 @@ export function useContactViews({
       console.error("Unexpected error deleting view:", error);
       toast.error("Error deleting view");
     }
-  };
+  }, [selectedView, views]);
   
   // Update view in database
-  const updateViewInDatabase = async (view: ContactView) => {
+  const updateViewInDatabase = useCallback(async (view: ContactView) => {
     const supabase = getSupabaseClient();
     if (!supabase) {
       toast.error("Cannot update view: Client not initialized");
@@ -357,12 +359,20 @@ export function useContactViews({
       toast.error("Error updating view settings");
       return false;
     }
-  };
+  }, [userId]);
+  
+  // Wrap setSelectedView to avoid re-renders with same value
+  const handleSetSelectedView = useCallback((view: ContactView | null) => {
+    setSelectedView(prev => {
+      if (prev?.id === view?.id) return prev;
+      return view;
+    });
+  }, []);
   
   return {
     views,
     selectedView,
-    setSelectedView,
+    setSelectedView: handleSetSelectedView,
     isLoading,
     error,
     fetchViews,
