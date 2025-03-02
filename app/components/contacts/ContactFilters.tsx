@@ -5,7 +5,8 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Badge } from "~/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
-import { ContactFilter, ContactView, formatFieldName, ViewField } from "~/components/contacts/types";
+import { ContactFilter, ContactView, formatFieldName, ViewField } from '~/components/contacts/types';
+import { useCallback } from "react";
 
 interface ContactFiltersProps {
   selectedView: ContactView | null;
@@ -22,8 +23,8 @@ export function ContactFilters({
   isFilterOpen,
   setIsFilterOpen
 }: ContactFiltersProps) {
-  // Add filter to view
-  const addFilter = () => {
+  // Add filter to view - using useCallback to prevent recreating on every render
+  const addFilter = useCallback(() => {
     if (!selectedView) return;
     
     // Find first available field that's visible in the view
@@ -43,10 +44,10 @@ export function ContactFilters({
     
     setSelectedView(updatedView);
     updateViewInDatabase(updatedView);
-  };
+  }, [selectedView, setSelectedView, updateViewInDatabase]);
   
-  // Update filter in view
-  const updateFilter = (index: number, data: Partial<ContactFilter>) => {
+  // Update filter in view - using useCallback
+  const updateFilter = useCallback((index: number, data: Partial<ContactFilter>) => {
     if (!selectedView) return;
     
     const newFilters = [...selectedView.filters];
@@ -59,10 +60,10 @@ export function ContactFilters({
     
     setSelectedView(updatedView);
     updateViewInDatabase(updatedView);
-  };
+  }, [selectedView, setSelectedView, updateViewInDatabase]);
   
-  // Remove filter from view
-  const removeFilter = (index: number) => {
+  // Remove filter from view - using useCallback
+  const removeFilter = useCallback((index: number) => {
     if (!selectedView) return;
     
     const newFilters = [...selectedView.filters];
@@ -75,10 +76,10 @@ export function ContactFilters({
     
     setSelectedView(updatedView);
     updateViewInDatabase(updatedView);
-  };
+  }, [selectedView, setSelectedView, updateViewInDatabase]);
   
-  // Clear all filters
-  const clearFilters = () => {
+  // Clear all filters - using useCallback
+  const clearFilters = useCallback(() => {
     if (!selectedView) return;
     
     const updatedView = {
@@ -88,10 +89,10 @@ export function ContactFilters({
     
     setSelectedView(updatedView);
     updateViewInDatabase(updatedView);
-  };
+  }, [selectedView, setSelectedView, updateViewInDatabase]);
   
-  // Move a filter up or down
-  const moveFilter = (index: number, direction: number) => {
+  // Move a filter up or down - using useCallback
+  const moveFilter = useCallback((index: number, direction: number) => {
     if (!selectedView) return;
     
     const newFilters = [...selectedView.filters];
@@ -110,7 +111,10 @@ export function ContactFilters({
     
     setSelectedView(updatedView);
     updateViewInDatabase(updatedView);
-  };
+  }, [selectedView, setSelectedView, updateViewInDatabase]);
+  
+  // If there's no selected view, don't render anything
+  if (!selectedView) return null;
   
   return (
     <Popover open={isFilterOpen} onOpenChange={setIsFilterOpen}>

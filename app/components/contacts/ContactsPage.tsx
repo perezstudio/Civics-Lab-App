@@ -1,6 +1,6 @@
 // app/components/contacts/ContactsPage.tsx
 import { Users, UserPlus } from 'lucide-react';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { ContactViewSelector } from './ContactViewSelector';
@@ -10,12 +10,32 @@ import { ContactSortingComponent } from './ContactSorting';
 import { ContactsTable } from './ContactsTable';
 import { ContactForm } from './ContactForm';
 import { ContactDetails } from './ContactDetails';
+import { toast } from 'sonner';
 
 import { useContactsData } from '~/hooks/contacts/useContactsData';
 import { useContactViews } from '~/hooks/contacts/useContactViews';
 import { useContactDetails } from '~/hooks/contacts/useContactDetails';
 import { useResizableColumns } from '~/hooks/contacts/useResizableColumns';
 import { useContactForm } from '~/hooks/contacts/useContactForm';
+import { ContactView } from '~/components/contacts/types';
+
+// Utility debounce hook
+function useDebounce<T extends (...args: any[]) => any>(
+  callback: T,
+  delay: number
+): (...args: Parameters<T>) => void {
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  return useCallback((...args: Parameters<T>) => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    
+    timeoutRef.current = setTimeout(() => {
+      callback(...args);
+    }, delay);
+  }, [callback, delay]);
+}
 
 interface ContactsPageProps {
   userId: string;
@@ -32,6 +52,9 @@ export function ContactsPage({
   initialViews = [],
   initialContacts = []
 }: ContactsPageProps) {
+  // Reference to track component mount state
+  const isMounted = useRef(true);
+  
   // State for filter/sort UI controls
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isSortingOpen, setIsSortingOpen] = useState(false);
@@ -84,6 +107,12 @@ export function ContactsPage({
       }
     }
   });
+  
+  // Create a debounced version of updateViewInDatabase to prevent excessive updates
+  const debouncedUpdateView = useDebounce(async (view: ContactView) => {
+    if (!view) return;
+    await updateViewInDatabase(view);
+  }, 500); // 500ms debounce delay
   
   // Initialize contacts data hook
   const {
@@ -179,35 +208,30 @@ export function ContactsPage({
   // Effect to mark component as mounted for debugging
   useEffect(() => {
     setIsComponentMounted(true);
+    
+    // Cleanup on unmount
+    return () => {
+      isMounted.current = false;
+    };
   }, []);
   
   // Effect to refresh data when workspace changes
-  // Update the data loading effects in ContactsPage
-useEffect(() => {
-  if (!workspaceId) {
-    console.log('No workspace ID provided to ContactsPage');
-    return;
-  }
+  useEffect(() => {
+    if (!workspaceId || !isMounted.current) {
+      return;
+    }
+    
+    // If initial data is already provided, use it
+    if (initialViews.length === 0) {
+      fetchViews();
+    }
+    
+    if (initialContacts.length === 0) {
+      fetchContacts();
+    }
+  }, [workspaceId, initialViews.length, initialContacts.length, fetchViews, fetchContacts]);
   
-  console.log('ContactsPage: Loading data for workspace', workspaceId);
-  console.log('Initial views:', initialViews.length, initialViews);
-  console.log('Initial contacts:', initialContacts.length, initialContacts);
-  
-  // If initial data is already provided, use it
-  if (initialViews.length > 0) {
-    fetchViews();
-  }
-  
-  if (initialContacts.length > 0) {
-    // If we have initial contacts, we don't need to fetch them again
-    console.log('Using initial contacts');
-  } else {
-    // Only fetch contacts if we don't have initial data
-    fetchContacts();
-  }
-}, [workspaceId, initialViews.length, initialContacts.length, fetchViews, fetchContacts]);
-  
-  // Handlers
+  // Handlers - wrapped with useCallback to maintain reference stability
   const handleCreateContact = useCallback(() => {
     setIsFormOpen(true);
   }, [setIsFormOpen]);
@@ -218,7 +242,9 @@ useEffect(() => {
   
   const handleDeleteContact = useCallback(async (contactId) => {
     await deleteContact(contactId);
-    fetchContacts();
+    if (isMounted.current) {
+      fetchContacts();
+    }
   }, [deleteContact, fetchContacts]);
   
   const handleCreateView = useCallback(async (name) => {
@@ -236,6 +262,11 @@ useEffect(() => {
   const handleDeleteView = useCallback(async () => {
     await deleteView();
   }, [deleteView]);
+  
+  // Handle search input changes with debounce to prevent excessive updates
+  const handleSearchChange = useDebounce((e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(e.target.value);
+  }, 300);
   
   // Determine loading state
   const isLoading = initialLoading || contactsLoading || viewsLoading || !isComponentMounted;
@@ -278,31 +309,35 @@ useEffect(() => {
       {/* Filter & Sort Bar */}
       <div className="flex items-center justify-between p-4 border-b">
         <div className="flex gap-2">
-          {/* Filters */}
-          <ContactFilters 
-            selectedView={selectedView}
-            setSelectedView={setSelectedView}
-            updateViewInDatabase={updateViewInDatabase}
-            isFilterOpen={isFilterOpen}
-            setIsFilterOpen={setIsFilterOpen}
-          />
+          {/* Filters - Using debounced update */}
+          {selectedView && (
+            <ContactFilters 
+              selectedView={selectedView}
+              setSelectedView={setSelectedView}
+              updateViewInDatabase={debouncedUpdateView}
+              isFilterOpen={isFilterOpen}
+              setIsFilterOpen={setIsFilterOpen}
+            />
+          )}
           
-          {/* Sorting */}
-          <ContactSortingComponent 
-            selectedView={selectedView}
-            setSelectedView={setSelectedView}
-            updateViewInDatabase={updateViewInDatabase}
-            isSortingOpen={isSortingOpen}
-            setIsSortingOpen={setIsSortingOpen}
-          />
+          {/* Sorting - Using debounced update */}
+          {selectedView && (
+            <ContactSortingComponent 
+              selectedView={selectedView}
+              setSelectedView={setSelectedView}
+              updateViewInDatabase={debouncedUpdateView}
+              isSortingOpen={isSortingOpen}
+              setIsSortingOpen={setIsSortingOpen}
+            />
+          )}
         </div>
         
         {/* Search */}
         <Input
           className="w-64"
           placeholder="Search contacts..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          defaultValue={searchQuery}
+          onChange={handleSearchChange}
         />
       </div>
       

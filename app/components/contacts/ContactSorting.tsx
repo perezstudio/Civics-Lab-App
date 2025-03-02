@@ -5,6 +5,7 @@ import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { ContactSorting, ContactView, formatFieldName } from "~/components/contacts/types";
+import { useCallback } from "react";
 
 interface ContactSortingProps {
   selectedView: ContactView | null;
@@ -21,8 +22,8 @@ export function ContactSortingComponent({
   isSortingOpen,
   setIsSortingOpen
 }: ContactSortingProps) {
-  // Add sort to view
-  const addSort = () => {
+  // Add sort to view - using useCallback for stability
+  const addSort = useCallback(() => {
     if (!selectedView) return;
     
     // Find first available field that's visible in the view
@@ -42,10 +43,10 @@ export function ContactSortingComponent({
     
     setSelectedView(updatedView);
     updateViewInDatabase(updatedView);
-  };
+  }, [selectedView, setSelectedView, updateViewInDatabase]);
   
-  // Update sort in view
-  const updateSort = (index: number, data: Partial<ContactSorting>) => {
+  // Update sort in view - using useCallback
+  const updateSort = useCallback((index: number, data: Partial<ContactSorting>) => {
     if (!selectedView) return;
     
     const newSorting = [...selectedView.sorting];
@@ -58,10 +59,10 @@ export function ContactSortingComponent({
     
     setSelectedView(updatedView);
     updateViewInDatabase(updatedView);
-  };
+  }, [selectedView, setSelectedView, updateViewInDatabase]);
   
-  // Remove sort from view
-  const removeSort = (index: number) => {
+  // Remove sort from view - using useCallback
+  const removeSort = useCallback((index: number) => {
     if (!selectedView) return;
     
     const newSorting = [...selectedView.sorting];
@@ -74,10 +75,10 @@ export function ContactSortingComponent({
     
     setSelectedView(updatedView);
     updateViewInDatabase(updatedView);
-  };
+  }, [selectedView, setSelectedView, updateViewInDatabase]);
   
-  // Clear all sorts
-  const clearSorting = () => {
+  // Clear all sorts - using useCallback
+  const clearSorting = useCallback(() => {
     if (!selectedView) return;
     
     const updatedView = {
@@ -87,7 +88,10 @@ export function ContactSortingComponent({
     
     setSelectedView(updatedView);
     updateViewInDatabase(updatedView);
-  };
+  }, [selectedView, setSelectedView, updateViewInDatabase]);
+  
+  // If there's no selected view, don't render anything
+  if (!selectedView) return null;
   
   return (
     <Popover open={isSortingOpen} onOpenChange={setIsSortingOpen}>
