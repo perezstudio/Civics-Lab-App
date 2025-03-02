@@ -1,3 +1,4 @@
+// app/root.tsx
 import { 
   Links, 
   Meta, 
@@ -15,9 +16,9 @@ import {
   type LinksFunction 
 } from "@remix-run/node"
 import { createSupabaseServerClient } from "~/services/supabase.server"
-import { initSupabaseClient, isClientInitialized } from "~/services/auth.client"
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { Toaster } from "~/components/ui/sonner"
+import { AuthProvider } from "~/contexts/AuthContext"
 import stylesheet from "~/tailwind.css?url"
 
 export const links: LinksFunction = () => [
@@ -95,15 +96,6 @@ export function ErrorBoundary() {
               SUPABASE_ANON_KEY=your_supabase_anon_key{'\n'}
               SESSION_SECRET=a_long_random_secret
             </pre>
-            <p className="mt-4">You can find your Supabase URL and Anon Key in:</p>
-            <a 
-              href="https://supabase.com/dashboard/project/_/settings/api" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-blue-600 underline"
-            >
-              Supabase Project Settings
-            </a>
           </div>
           <Scripts />
         </body>
@@ -140,7 +132,7 @@ export function ErrorBoundary() {
   )
 }
 
-export function Layout({ children }: { children: React.ReactNode }) {
+export default function App() {
   const { 
     env = { 
       SUPABASE_URL: '', 
@@ -150,16 +142,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
     error 
   } = useLoaderData<typeof loader>() || {}
 
-  // Initialize Supabase client on the client side and expose env for other components
+  // Make env available to other modules through window
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      // Make env available to other modules through window
       (window as any).__env = env
-      
-      // Initialize Supabase client if not already done
-      if (env.SUPABASE_URL && env.SUPABASE_ANON_KEY && !isClientInitialized()) {
-        initSupabaseClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY)
-      }
     }
   }, [env])
 
@@ -196,16 +182,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <div className="fixed top-0 left-0 right-0 h-1 bg-primary animate-pulse z-50" />
         )}
         
-        {children}
+        <AuthProvider>
+          <Outlet />
+          <Toaster />
+        </AuthProvider>
         
         <ScrollRestoration />
         <Scripts />
-        <Toaster />
       </body>
     </html>
   )
-}
-
-export default function App() {
-  return <Outlet />
 }

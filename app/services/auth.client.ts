@@ -1,113 +1,220 @@
 // app/services/auth.client.ts
-import { createBrowserClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
+import type { Session, User } from '@supabase/supabase-js'
 import type { Database } from '~/types/supabase'
-import type { User } from '@supabase/supabase-js'
 
-// Client-side singleton instance
-let supabaseClient: ReturnType<typeof createBrowserClient<Database>> | null = null
-let initializationAttempted = false
+// Singleton Supabase client instance
+let supabaseClient: ReturnType<typeof createClient<Database>> | null = null
 
-// Initialize the Supabase client (called from root layout)
-// In auth.client.ts
-export const initSupabaseClient = (
-  supabaseUrl: string, 
-  supabaseAnonKey: string
-) => {
-  console.log('Attempting to initialize Supabase client with:', 
-    supabaseUrl ? 'Valid URL' : 'Missing URL',
-    supabaseAnonKey ? 'Valid Key' : 'Missing Key'
-  );
+// Auth state management
+let currentUser: User | null = null
+let isInitialized = false
+let authChangeCallbacks: ((user: User | null) => void)[] = []
 
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('Cannot initialize Supabase: missing credentials');
-    return null;
+/**
+ * Initialize the Supabase client
+ */
+export function initSupabase() {
+  if (typeof window === 'undefined') return null
+  
+  // Get credentials from window object (set in root loader)
+  const supabaseUrl = (window as any).__env?.SUPABASE_URL
+  const supabaseKey = (window as any).__env?.SUPABASE_ANON_KEY
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing Supabase credentials. Make sure environment variables are set.')
+    return null
   }
-
-  try {
-    supabaseClient = createBrowserClient<Database>(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: true,
-        storageKey: 'sb-auth-token',
+  
+  if (!supabaseClient) {
+    console.log('Initializing Supabase client')
+    
+    supabaseClient = createClient<Database>(
+      supabaseUrl,
+      supabaseKey,
+      {
+        auth: {
+          persistSession: true,
+          storageKey: 'supabase-auth',
+          autoRefreshToken: true,
+          detectSessionInUrl: true
+        }
       }
-    });
-    console.log('Supabase client initialized successfully');
-    return supabaseClient;
-  } catch (error) {
-    console.error('Failed to initialize Supabase client:', error);
-    return null;
+    )
+    
+    // Set up auth state listener
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state changed:', event, session?.user?.email)
+      currentUser = session?.user || null
+      
+      // Call all registered callbacks
+      authChangeCallbacks.forEach(callback => callback(currentUser))
+    })
+    
+    // Check for existing session
+    supabaseClient.auth.getSession().then(({ data }) => {
+      currentUser = data.session?.user || null
+      isInitialized = true
+      
+      // Call all registered callbacks
+      authChangeCallbacks.forEach(callback => callback(currentUser))
+    })
   }
-};
+  
+  return supabaseClient
+}
 
-// Get the Supabase client (with auto-initialization)
-export const getSupabaseClient = () => {
-  if (!supabaseClient && typeof window !== 'undefined') {
-    // Try to find the env values that might be in window
-    const envFromWindow = (window as any).__env
-    
-    if (envFromWindow?.SUPABASE_URL && envFromWindow?.SUPABASE_ANON_KEY) {
-      return initSupabaseClient(envFromWindow.SUPABASE_URL, envFromWindow.SUPABASE_ANON_KEY)
-    }
-    
-    console.warn('Supabase client has not been initialized and env values not found')
+/**
+ * Get the Supabase client (initialize if needed)
+ */
+export function getClient() {
+  if (!supabaseClient) {
+    return initSupabase()
   }
   return supabaseClient
 }
 
-// Check if the client is already initialized
-export const isClientInitialized = () => {
-  return !!supabaseClient
+/**
+ * Check if Supabase is initialized
+ */
+export function isSupabaseInitialized() {
+  return isInitialized
 }
 
-// Authentication functions
-export const getUser = async (): Promise<User | null> => {
-  const client = getSupabaseClient()
-  if (!client) return null
+/**
+ * Get the current user
+ */
+export function getUser(): User | null {
+  return currentUser
+}
+
+/**
+ * Check if user is authenticated
+ */
+export function isAuthenticated(): boolean {
+  return !!currentUser
+}
+
+/**
+ * Register callback for auth state changes
+ */
+export function onAuthStateChange(callback: (user: User | null) => void): () => void {
+  authChangeCallbacks.push(callback)
   
-  try {
-    // Use getUser() instead of getSession() to avoid security warnings
-    const { data, error } = await client.auth.getUser()
-    
-    if (error) {
-      console.error('Error getting user:', error)
-      return null
-    }
-    
-    return data.user
-  } catch (error) {
-    console.error('Error in getUser:', error)
-    return null
+  // If already initialized, call with current state immediately
+  if (isInitialized) {
+    callback(currentUser)
+  }
+  
+  // Return unsubscribe function
+  return () => {
+    authChangeCallbacks = authChangeCallbacks.filter(cb => cb !== callback)
   }
 }
 
-export const isAuthenticated = async (): Promise<boolean> => {
-  const user = await getUser()
-  return !!user
-}
-
-export const signOut = async () => {
-  const client = getSupabaseClient()
-  if (!client) return { error: 'Client not initialized' }
+/**
+ * Sign in with email and password
+ */
+export async function signIn(email: string, password: string) {
+  const client = getClient()
+  if (!client) return { error: { message: 'Client not initialized' } }
   
   try {
-    return await client.auth.signOut()
-  } catch (error) {
-    console.error('Error during sign out:', error)
-    return { error: 'Failed to sign out' }
+    const { data, error } = await client.auth.signInWithPassword({
+      email,
+      password
+    })
+    
+    if (error) throw error
+    
+    currentUser = data.user
+    return { data }
+  } catch (error: any) {
+    console.error('Sign in error:', error)
+    return { error }
   }
 }
 
-// Data functions
-export const fetchUserWorkspaces = async (userId: string) => {
-  const client = getSupabaseClient()
-  if (!client) return { data: null, error: 'Client not initialized' }
+/**
+ * Sign up with email and password
+ */
+export async function signUp(email: string, password: string) {
+  const client = getClient()
+  if (!client) return { error: { message: 'Client not initialized' } }
   
   try {
-    return await client
-      .from('workspaces')
-      .select('*')
-      .eq('created_by', userId)
-  } catch (error) {
-    console.error('Error fetching workspaces:', error)
-    return { data: null, error: 'Failed to fetch workspaces' }
+    const { data, error } = await client.auth.signUp({
+      email,
+      password
+    })
+    
+    if (error) throw error
+    
+    return { data }
+  } catch (error: any) {
+    console.error('Sign up error:', error)
+    return { error }
+  }
+}
+
+/**
+ * Sign out current user
+ */
+export async function signOut() {
+  const client = getClient()
+  if (!client) return { error: { message: 'Client not initialized' } }
+  
+  try {
+    const { error } = await client.auth.signOut()
+    
+    if (error) throw error
+    
+    currentUser = null
+    return { success: true }
+  } catch (error: any) {
+    console.error('Sign out error:', error)
+    return { error }
+  }
+}
+
+/**
+ * Reset password
+ */
+export async function resetPassword(email: string) {
+  const client = getClient()
+  if (!client) return { error: { message: 'Client not initialized' } }
+  
+  try {
+    const { data, error } = await client.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`
+    })
+    
+    if (error) throw error
+    
+    return { data }
+  } catch (error: any) {
+    console.error('Reset password error:', error)
+    return { error }
+  }
+}
+
+/**
+ * Update user password
+ */
+export async function updatePassword(password: string) {
+  const client = getClient()
+  if (!client) return { error: { message: 'Client not initialized' } }
+  
+  try {
+    const { data, error } = await client.auth.updateUser({
+      password
+    })
+    
+    if (error) throw error
+    
+    return { data }
+  } catch (error: any) {
+    console.error('Update password error:', error)
+    return { error }
   }
 }

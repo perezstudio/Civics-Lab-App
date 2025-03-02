@@ -76,27 +76,42 @@ export function createSupabaseServerClient(request: Request) {
 
 // Get the user from the session, using getUser to follow security best practices
 export async function getUser(request: Request) {
-  const { supabase } = createSupabaseServerClient(request)
-  // Use getUser instead of getSession to address the security warning
-  const { data, error } = await supabase.auth.getUser()
-  
-  if (error) {
-    console.error('Error getting user:', error)
+  try {
+    const { supabase, headers } = createSupabaseServerClient(request)
+    const { data, error } = await supabase.auth.getUser()
+    
+    if (error) {
+      console.error('Error getting user:', error)
+      return null
+    }
+    
+    return data.user
+  } catch (error) {
+    console.error('Error in getUser helper:', error)
     return null
   }
-  
-  return data.user
 }
 
 // Require user authentication and redirect if not authenticated
 export async function requireUser(request: Request, redirectTo = '/login') {
-  const user = await getUser(request)
-  if (!user) {
-    // Create a redirect with cleared cookie if no user is found
+  try {
+    const { supabase, headers } = createSupabaseServerClient(request)
+    const { data, error } = await supabase.auth.getUser()
+    
+    if (error || !data.user) {
+      throw redirect(redirectTo, { headers })
+    }
+    
+    return data.user
+  } catch (error) {
+    if (error instanceof Response) {
+      throw error
+    }
+    
+    // For other errors, create a redirect with headers
     const { headers } = createSupabaseServerClient(request)
     throw redirect(redirectTo, { headers })
   }
-  return user
 }
 
 // Sign in with email and password
@@ -120,4 +135,418 @@ export async function signOut(request: Request) {
   const { supabase, headers } = createSupabaseServerClient(request)
   await supabase.auth.signOut()
   return redirect('/login', { headers })
+}
+
+// Sign up a new user with email and password
+export async function signUpWithPassword(request: Request, email: string, password: string) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+  })
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Reset password
+export async function resetPassword(request: Request, email: string) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${new URL(request.url).origin}/reset-password`,
+  })
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Update user password
+export async function updatePassword(request: Request, password: string) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase.auth.updateUser({
+    password,
+  })
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Create data in a table
+export async function createData(request: Request, table: string, data: any) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data: result, error } = await supabase
+    .from(table)
+    .insert(data)
+    .select()
+    .single()
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data: result, headers }
+}
+
+// Update data in a table
+export async function updateData(request: Request, table: string, id: string, data: any) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data: result, error } = await supabase
+    .from(table)
+    .update(data)
+    .eq('id', id)
+    .select()
+    .single()
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data: result, headers }
+}
+
+// Delete data from a table
+export async function deleteData(request: Request, table: string, id: string) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { error } = await supabase
+    .from(table)
+    .delete()
+    .eq('id', id)
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { success: true, headers }
+}
+
+// Fetch data with optional query parameters
+export async function fetchData(request: Request, table: string, query: Record<string, any> = {}) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase
+    .from(table)
+    .select()
+    .match(query)
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Fetch data with complex query builder
+export async function queryData(request: Request, table: string, queryFn: (query: any) => any) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  let query = supabase.from(table).select()
+  query = queryFn(query)
+  
+  const { data, error } = await query
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Fetch user data with custom query
+export async function fetchUserData(request: Request, userId: string) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .single()
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Create or update a profile for a user
+export async function upsertProfile(request: Request, profile: any) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase
+    .from('profiles')
+    .upsert(profile)
+    .select()
+    .single()
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Fetch workspaces for a user
+export async function fetchWorkspaces(request: Request, userId: string) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase
+    .from('workspaces')
+    .select('*')
+    .eq('created_by', userId)
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Fetch workspace details with members
+export async function fetchWorkspaceWithMembers(request: Request, workspaceId: string) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase
+    .from('workspaces')
+    .select(`
+      *,
+      workspace_members(
+        *,
+        profiles(*)
+      )
+    `)
+    .eq('id', workspaceId)
+    .single()
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Create a workspace
+export async function createWorkspace(request: Request, workspace: any) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase
+    .from('workspaces')
+    .insert(workspace)
+    .select()
+    .single()
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Add a member to a workspace
+export async function addWorkspaceMember(request: Request, workspaceMember: any) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase
+    .from('workspace_members')
+    .insert(workspaceMember)
+    .select()
+    .single()
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Remove a member from a workspace
+export async function removeWorkspaceMember(request: Request, workspaceId: string, userId: string) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { error } = await supabase
+    .from('workspace_members')
+    .delete()
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId)
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { success: true, headers }
+}
+
+// Fetch contacts for a workspace
+export async function fetchContacts(request: Request, workspaceId: string) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase
+    .from('contacts')
+    .select(`
+      *,
+      race:race_id(id, race),
+      gender:gender_id(id, gender),
+      emails:contact_emails(*),
+      phones:contact_phones(*),
+      addresses:contact_addresses(
+        *,
+        state:state_id(id, name, abbreviation),
+        zip:zip_code_id(id, name)
+      ),
+      social_media:contact_social_media_accounts(*),
+      tags:contact_tag_assignments(
+        id,
+        tag:tag_id(id, tag)
+      )
+    `)
+    .eq('workspace_id', workspaceId)
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Fetch a single contact with all related data
+export async function fetchContact(request: Request, contactId: string) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase
+    .from('contacts')
+    .select(`
+      *,
+      race:race_id(id, race),
+      gender:gender_id(id, gender),
+      emails:contact_emails(*),
+      phones:contact_phones(*),
+      addresses:contact_addresses(
+        *,
+        state:state_id(id, name, abbreviation),
+        zip:zip_code_id(id, name)
+      ),
+      social_media:contact_social_media_accounts(*),
+      tags:contact_tag_assignments(
+        id,
+        tag:tag_id(id, tag)
+      )
+    `)
+    .eq('id', contactId)
+    .single()
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Fetch contact views for a workspace
+export async function fetchContactViews(request: Request, workspaceId: string) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase
+    .from('contact_views')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Create a contact view
+export async function createContactView(request: Request, contactView: any) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase
+    .from('contact_views')
+    .insert(contactView)
+    .select()
+    .single()
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Update a contact view
+export async function updateContactView(request: Request, id: string, contactView: any) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase
+    .from('contact_views')
+    .update(contactView)
+    .eq('id', id)
+    .select()
+    .single()
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Delete a contact view
+export async function deleteContactView(request: Request, id: string) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { error } = await supabase
+    .from('contact_views')
+    .delete()
+    .eq('id', id)
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { success: true, headers }
+}
+
+// Fetch reference data (states, zip codes, etc.)
+export async function fetchReferenceData(request: Request, table: string) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { data, error } = await supabase
+    .from(table)
+    .select('*')
+  
+  if (error) {
+    return { error, headers }
+  }
+  
+  return { data, headers }
+}
+
+// Process OAuth callback
+export async function handleAuthCallback(request: Request) {
+  const { supabase, headers } = createSupabaseServerClient(request)
+  
+  const { searchParams } = new URL(request.url)
+  const code = searchParams.get('code')
+
+  if (code) {
+    await supabase.auth.exchangeCodeForSession(code)
+  }
+
+  return { success: true, headers }
 }

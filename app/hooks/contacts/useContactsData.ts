@@ -1,6 +1,6 @@
 // app/hooks/contacts/useContactsData.ts
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getSupabaseClient, isClientInitialized } from '~/services/auth.client';
+import { useAuth } from '~/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Contact, ContactView } from '~/components/contacts/types';
 
@@ -16,6 +16,9 @@ export function useContactsData({
   workspaceId, 
   initialContacts = [] 
 }: UseContactsDataOptions) {
+  // Get Supabase client from auth context
+  const { supabase } = useAuth();
+  
   // Mounted ref to prevent state updates after unmount
   const isMounted = useRef(true);
   
@@ -63,9 +66,9 @@ export function useContactsData({
     } else if (path === 'phone_numbers') {
       return obj.phones?.map((p: any) => p.number).join(', ') || '';
     } else if (path === 'addresses') {
-      return obj.addresses?.map((a: any) => `${a.street}, ${a.city}`).join('; ') || '';
+      return obj.addresses?.map((a: any) => `${a.street_address}, ${a.city || ''}`).join('; ') || '';
     } else if (path === 'social_media_accounts') {
-      return obj.social_media?.map((s: any) => `${s.service}: ${s.username}`).join('; ') || '';
+      return obj.social_media?.map((s: any) => `${s.service_type}: ${s.username}`).join('; ') || '';
     } else if (path === 'race') {
       return obj.race?.race || '';
     } else if (path === 'gender') {
@@ -176,7 +179,7 @@ export function useContactsData({
     }
     
     // Check if Supabase client is initialized
-    if (!isClientInitialized()) {
+    if (!supabase) {
       // If we've already tried multiple times, just set an error
       if (retryCount >= 3) {
         if (isMounted.current) {
@@ -196,14 +199,6 @@ export function useContactsData({
         }
       }, retryDelay);
       
-      return;
-    }
-    
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      if (isMounted.current) {
-        setError('Supabase client not initialized');
-      }
       return;
     }
     
@@ -253,7 +248,7 @@ export function useContactsData({
         setIsLoading(false);
       }
     }
-  }, [workspaceId, searchQuery, applyFilters, retryCount]);
+  }, [workspaceId, searchQuery, applyFilters, retryCount, supabase]);
   
   return {
     contacts,

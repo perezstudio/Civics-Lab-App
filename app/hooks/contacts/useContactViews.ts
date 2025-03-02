@@ -1,6 +1,6 @@
 // app/hooks/contacts/useContactViews.ts
 import { useState, useEffect, useCallback } from 'react';
-import { getSupabaseClient, isClientInitialized } from '~/services/auth.client';
+import { useAuth } from '~/contexts/AuthContext';
 import { toast } from 'sonner';
 import { 
   ContactView, 
@@ -26,6 +26,9 @@ export function useContactViews({
   initialViews = [],
   onViewChange
 }: UseContactViewsOptions) {
+  // Get Supabase client from auth context
+  const { supabase } = useAuth();
+  
   const [views, setViews] = useState<ContactView[]>(initialViews);
   const [selectedView, setSelectedView] = useState<ContactView | null>(initialViews[0] || null);
   const [isLoading, setIsLoading] = useState(false);
@@ -67,26 +70,8 @@ export function useContactViews({
     }
     
     // Check if Supabase client is initialized
-    if (!isClientInitialized()) {
-      const retryDelay = 500; // 500ms
-      console.log(`Supabase client not initialized, retrying in ${retryDelay}ms...`);
-      
-      // Wait and retry once
-      setTimeout(() => {
-        if (isClientInitialized()) {
-          fetchViews();
-        } else {
-          setError('Supabase client not initialized');
-          console.warn('Supabase client still not initialized after retry');
-        }
-      }, retryDelay);
-      
-      return;
-    }
-    
-    const supabase = getSupabaseClient();
     if (!supabase) {
-      setError('Supabase client not initialized or workspace not selected');
+      setError('Supabase client not initialized');
       return;
     }
     
@@ -118,17 +103,11 @@ export function useContactViews({
     } finally {
       setIsLoading(false);
     }
-  }, [workspaceId, selectedView]);
+  }, [workspaceId, selectedView, supabase]);
 
   // Update view field visibility 
   const updateViewField = useCallback(async (field: keyof ContactView, value: boolean) => {
-    if (!selectedView) return;
-    
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      toast.error("Cannot update view: Client not initialized");
-      return;
-    }
+    if (!selectedView || !supabase) return;
 
     try {
       const { error } = await supabase
@@ -159,17 +138,11 @@ export function useContactViews({
       console.error("Unexpected error updating view:", error);
       toast.error("Error updating view");
     }
-  }, [selectedView, fetchViews]);
+  }, [selectedView, fetchViews, supabase]);
 
   // Create a new view
   const createView = useCallback(async (viewName: string) => {
-    if (!viewName.trim() || !workspaceId || !userId) {
-      return null;
-    }
-    
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      toast.error("Cannot create view: Client not initialized");
+    if (!viewName.trim() || !workspaceId || !userId || !supabase) {
       return null;
     }
 
@@ -222,18 +195,12 @@ export function useContactViews({
       toast.error("Error creating view");
       return null;
     }
-  }, [workspaceId, userId, views.length, fetchViews]);
+  }, [workspaceId, userId, views.length, fetchViews, supabase]);
   
   // Edit an existing view
   const editView = useCallback(async (viewName: string) => {
-    if (!selectedView || !viewName.trim()) return;
+    if (!selectedView || !viewName.trim() || !supabase) return;
     
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      toast.error("Cannot update view: Client not initialized");
-      return;
-    }
-  
     try {
       const updateData = { 
         view_name: viewName.trim(),
@@ -275,18 +242,12 @@ export function useContactViews({
       console.error("Unexpected error updating view:", error);
       toast.error("Error updating view");
     }
-  }, [selectedView, userId, fetchViews]);
+  }, [selectedView, userId, fetchViews, supabase]);
   
   // Delete a view
   const deleteView = useCallback(async () => {
-    if (!selectedView) return;
+    if (!selectedView || !supabase) return;
     
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      toast.error("Cannot delete view: Client not initialized");
-      return;
-    }
-  
     try {
       const { error } = await supabase
         .from('contact_views')
@@ -314,11 +275,10 @@ export function useContactViews({
       console.error("Unexpected error deleting view:", error);
       toast.error("Error deleting view");
     }
-  }, [selectedView, views]);
+  }, [selectedView, views, supabase]);
   
   // Update view in database
   const updateViewInDatabase = useCallback(async (view: ContactView) => {
-    const supabase = getSupabaseClient();
     if (!supabase) {
       toast.error("Cannot update view: Client not initialized");
       return false;
@@ -359,7 +319,7 @@ export function useContactViews({
       toast.error("Error updating view settings");
       return false;
     }
-  }, [userId]);
+  }, [userId, supabase]);
   
   // Wrap setSelectedView to avoid re-renders with same value
   const handleSetSelectedView = useCallback((view: ContactView | null) => {

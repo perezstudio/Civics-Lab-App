@@ -1,6 +1,6 @@
 // app/hooks/contacts/useContactForm.ts
 import { useState, useEffect } from 'react';
-import { getSupabaseClient } from '~/services/auth.client';
+import { useAuth } from '~/contexts/AuthContext';
 import { toast } from 'sonner';
 import { 
   EmailEntry, 
@@ -39,6 +39,9 @@ export function useContactForm({
   userId,
   onSuccess 
 }: UseContactFormOptions) {
+  // Get Supabase client from auth context
+  const { supabase } = useAuth();
+  
   // Form state variables
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -70,17 +73,11 @@ export function useContactForm({
   
   // Fetch reference data when form is opened
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !supabase) return;
     
     const fetchReferenceData = async () => {
       try {
         setIsLoading(true);
-        const supabase = getSupabaseClient();
-        
-        if (!supabase) {
-          console.error('Supabase client not initialized');
-          return;
-        }
         
         const [
           { data: raceData, error: raceError },
@@ -132,7 +129,7 @@ export function useContactForm({
     };
   
     fetchReferenceData();
-  }, [isOpen, workspaceId]);
+  }, [isOpen, workspaceId, supabase]);
   
   // Reset form state
   const resetForm = () => {
@@ -153,8 +150,8 @@ export function useContactForm({
   
   // Handle form submission
   const handleSubmit = async () => {
-    if (!workspaceId) {
-      toast.error('No workspace selected');
+    if (!workspaceId || !supabase) {
+      toast.error('No workspace selected or database connection issue');
       return;
     }
     
@@ -165,11 +162,6 @@ export function useContactForm({
     
     try {
       setIsSubmitting(true);
-      const supabase = getSupabaseClient();
-      
-      if (!supabase) {
-        throw new Error('Supabase client not initialized');
-      }
       
       // Create contact object
       const contactData = {

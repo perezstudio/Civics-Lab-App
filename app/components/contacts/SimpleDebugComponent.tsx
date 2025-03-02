@@ -1,6 +1,6 @@
 // app/components/contacts/SimpleDebugComponent.tsx
 import React, { useEffect, useState } from 'react';
-import { getSupabaseClient } from '~/services/auth.client';
+import { getSupabaseClient } from '~/services/setup.client';
 
 interface SimpleDebugComponentProps {
   userId: string;

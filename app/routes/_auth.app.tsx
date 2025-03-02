@@ -1,12 +1,10 @@
 // app/routes/_auth.app.tsx
-import { Link, useOutletContext } from "@remix-run/react"
+import { Link } from "@remix-run/react"
 import { Button } from "~/components/ui/button"
-
-// Get user from the outlet context provided by the auth layout
-type AuthContext = { user: any }
+import { useAuth } from "~/contexts/AuthContext"
 
 export default function AppRoute() {
-  const { user } = useOutletContext<AuthContext>()
+  const { user } = useAuth()
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">

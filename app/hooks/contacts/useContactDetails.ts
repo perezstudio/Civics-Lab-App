@@ -1,6 +1,6 @@
 // app/hooks/contacts/useContactDetails.ts
 import { useState } from 'react';
-import { getSupabaseClient } from '~/services/auth.client';
+import { useAuth } from '~/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Contact } from '~/components/contacts/types';
 
@@ -12,6 +12,9 @@ interface UseContactDetailsOptions {
  * Hook for managing the contact details view
  */
 export function useContactDetails({ onEdit }: UseContactDetailsOptions = {}) {
+  // Get Supabase client from auth context
+  const { supabase } = useAuth();
+  
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -47,15 +50,10 @@ export function useContactDetails({ onEdit }: UseContactDetailsOptions = {}) {
   
   // Fetch full contact details if needed
   const fetchFullDetails = async (contactId: string) => {
-    if (!contactId) return;
+    if (!contactId || !supabase) return;
     
     try {
       setIsLoading(true);
-      const supabase = getSupabaseClient();
-      
-      if (!supabase) {
-        throw new Error('Supabase client not initialized');
-      }
       
       const { data, error } = await supabase
         .from('contacts')
@@ -97,15 +95,10 @@ export function useContactDetails({ onEdit }: UseContactDetailsOptions = {}) {
   
   // Delete a contact
   const deleteContact = async (contactId: string) => {
-    if (!contactId) return;
+    if (!contactId || !supabase) return;
     
     try {
       setIsLoading(true);
-      const supabase = getSupabaseClient();
-      
-      if (!supabase) {
-        throw new Error('Supabase client not initialized');
-      }
       
       // Delete contact - cascade should handle related records
       const { error } = await supabase

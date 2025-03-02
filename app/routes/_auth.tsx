@@ -1,32 +1,34 @@
 // app/routes/_auth.tsx
-import { json, redirect, type LoaderFunctionArgs } from "@remix-run/node"
-import { Outlet, useLoaderData } from "@remix-run/react"
+import { Outlet, useOutletContext } from "@remix-run/react"
 import { Toaster } from "~/components/ui/sonner"
-import { createSupabaseServerClient, getUser } from "~/services/supabase.server"
-
-// Server-side authentication check
-export async function loader({ request }: LoaderFunctionArgs) {
-  try {
-    // Create Supabase client
-    const { supabase, headers } = createSupabaseServerClient(request)
-    
-    // Get user using getUser() instead of session to avoid security warnings
-    const { data, error } = await supabase.auth.getUser()
-    
-    if (error || !data.user) {
-      // Redirect to login if user is not authenticated
-      return redirect('/login', { headers })
-    }
-    
-    return json({ user: data.user }, { headers })
-  } catch (error) {
-    console.error("Auth layout error:", error)
-    return redirect('/login')
-  }
-}
+import { useAuth } from "~/contexts/AuthContext"
+import { useEffect } from "react"
+import { useNavigate } from "@remix-run/react"
 
 export default function AuthLayout() {
-  const { user } = useLoaderData<typeof loader>()
+  const { user, isLoading, isAuthenticated } = useAuth()
+  const navigate = useNavigate()
+  
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      navigate('/login')
+    }
+  }, [isAuthenticated, isLoading, navigate])
+  
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    )
+  }
+  
+  // If not authenticated, will redirect
+  if (!isAuthenticated) {
+    return null
+  }
   
   return (
     <>

@@ -31,7 +31,6 @@ import {
   Gauge
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
-import { signOut } from "~/services/auth.client";
 import { toast } from "sonner";
 
 interface Workspace {
@@ -68,8 +67,21 @@ export function EngageSidebar({
   
   const handleSignOut = async () => {
     try {
-      await signOut();
-      navigate('/login');
+      // This is a cleaner approach that doesn't involve hook workarounds
+      // Just navigate to login and then clear auth state
+      window.location.href = '/login';
+      
+      // For proper cleanup, we can optionally try to sign out via the raw Supabase client
+      try {
+        const { getClient } = await import('~/services/auth.client');
+        const client = getClient();
+        if (client) {
+          await client.auth.signOut();
+        }
+      } catch (cleanupError) {
+        console.error('Cleanup error during sign out:', cleanupError);
+        // Not critical, we're already navigating away
+      }
     } catch (error) {
       console.error('Error signing out:', error);
       toast.error('Failed to sign out');

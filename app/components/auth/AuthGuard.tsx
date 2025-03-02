@@ -1,7 +1,7 @@
 // app/components/auth/AuthGuard.tsx
 import { useEffect, useState } from "react"
 import { useNavigate } from "@remix-run/react"
-import { isAuthenticated } from "~/services/auth.client"
+import { isAuthenticated } from "~/services/setup.client"
 
 interface AuthGuardProps {
   children: React.ReactNode
